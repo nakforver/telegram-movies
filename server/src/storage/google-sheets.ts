@@ -89,7 +89,7 @@ export class GoogleSheetsStore implements CatalogStore {
     });
   }
 
-  async schemaDiagnostics(): Promise<{ alignedRows: number; misalignedRows: number; totalRows: number }> {
+  async schemaDiagnostics(): Promise<{ alignedRows: number; misalignedRows: number; totalRows: number; rowShapes: string[] }> {
     await this.sheets();
     await this.sheetId();
     const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
@@ -101,7 +101,15 @@ export class GoogleSheetsStore implements CatalogStore {
       if (isAlignedRow(row)) alignedRows += 1;
       else if (isShiftedRow(row)) misalignedRows += 1;
     }
-    return { alignedRows, misalignedRows, totalRows: rows.length };
+    const rowShapes = rows.map(row => row.map(value => {
+      const text = String(value ?? '').trim();
+      if (text === '') return '-';
+      if (text === 'published' || text === 'draft') return 's';
+      if (Number.isFinite(Number(text))) return 'n';
+      if (Date.parse(text) > 0) return 'd';
+      return 'v';
+    }).join(''));
+    return { alignedRows, misalignedRows, totalRows: rows.length, rowShapes };
   }
 
   private validateHeaders(header: unknown[] | undefined): boolean {
