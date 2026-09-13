@@ -16,13 +16,16 @@ import HistoryPage from './pages/HistoryPage';
 export default function App() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    try {
-      init();
-      restoreInitData();
-      viewport.mount();
-      mountBackButton();
-    } catch (error) {
-      console.error('Telegram Mini App initialization failed', error);
+    const telegram = (window as unknown as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp;
+    if (telegram?.initData) {
+      try {
+        init();
+        restoreInitData();
+        viewport.mount();
+        mountBackButton();
+      } catch (error) {
+        console.warn('Telegram Mini App initialization failed', error);
+      }
     }
     setReady(true);
   }, []);
