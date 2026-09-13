@@ -79,6 +79,38 @@ describe('GoogleSheetsStore', () => {
     expect(request).toHaveBeenCalledWith('PUT', `/values/${encodeURIComponent(`Movies!A1:${columnLetter(SHEET_FIELDS.length)}1`)}?valueInputOption=RAW`, { values: [SHEET_FIELDS] });
   });
 
+  it('inserts the file-size column without shifting existing legacy rows', async () => {
+    const legacyRow = ['telegram--100123-8', 'Movies Korea', '', '', '', '', '', '', '', '', '', '', '', 'movie', '', '', '-100123', '8', 'file-id', '', 'published', '2026-09-13T00:00:00Z', '2026-09-13T00:00:00Z'];
+    const request = mockSheetsRequest({
+      '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
+      [headerRange]: { values: [LEGACY_SHEET_FIELD_SETS[1]] },
+      [dataRange]: { values: [legacyRow] },
+      ':batchUpdate': {}
+    });
+
+    const rows = await new GoogleSheetsStore('spreadsheet-id').list();
+
+    expect(rows[0]).toMatchObject({ movie_id: 'telegram--100123-8', telegram_message_id: '8', status: 'published' });
+    expect(request).toHaveBeenCalledWith('POST', ':batchUpdate', { requests: [{ insertDimension: { range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 19, endIndex: 20 }, inheritFromBefore: true } }] });
+    expect(request).toHaveBeenCalledWith('PUT', `/values/${encodeURIComponent(`Movies!A1:${columnLetter(SHEET_FIELDS.length)}1`)}?valueInputOption=RAW`, { values: [SHEET_FIELDS] });
+  });
+
+  it('repares rows misaligned by an earlier header-only migration', async () => {
+    const misalignedRow = ['telegram--100123-8', 'Movies Korea', '', '', '', '', '', '', '', '', '', '', '', 'movie', '', '', '-100123', '8', 'file-id', 'published', '2026-09-13T00:00:00Z', '2026-09-13T00:00:00Z', '', '', '', ''];
+    const request = mockSheetsRequest({
+      '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
+      [headerRange]: { values: [SHEET_FIELDS] },
+      [dataRange]: { values: [misalignedRow] },
+      ':batchUpdate': {}
+    });
+
+    const rows = await new GoogleSheetsStore('spreadsheet-id').list();
+
+    expect(rows).toHaveLength(1);
+    expect(request).toHaveBeenCalledWith('POST', ':batchUpdate', { requests: [{ insertDimension: { range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 19, endIndex: 20 }, inheritFromBefore: true } }] });
+    expect(request).toHaveBeenCalledWith('PUT', `/values/${encodeURIComponent(`Movies!A1:${columnLetter(SHEET_FIELDS.length)}1`)}?valueInputOption=RAW`, { values: [SHEET_FIELDS] });
+  });
+
   it('rejects an unsupported existing header layout', async () => {
     mockSheetsRequest({
       '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
@@ -97,6 +129,8 @@ describe('GoogleSheetsStore', () => {
     existingRow[17] = '456';
     const request = mockSheetsRequest({
       [dataRange]: { values: [existingRow] },
+      '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
+      [headerRange]: { values: [SHEET_FIELDS] },
       'A2:': {}
     });
     const record = SHEET_FIELDS.reduce((accumulator, field) => ({ ...accumulator, [field]: '' }), {}) as Record<string, string>;

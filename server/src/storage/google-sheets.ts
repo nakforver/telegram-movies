@@ -31,6 +31,7 @@ export class GoogleSheetsStore implements CatalogStore {
     await this.sheets();
     await this.sheetId();
     await this.ensureHeaderRow();
+    await this.repairMisalignedRows();
     const boundedResponse = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
     return (boundedResponse.values ?? []).map(rowToObject).filter(Boolean);
   }
@@ -48,8 +49,55 @@ export class GoogleSheetsStore implements CatalogStore {
       const headerNames = rawHeader.map(field => String(field ?? '').trim()).filter(Boolean);
       throw new Error(`Worksheet headers do not match the supported catalog schema. Found [${headerNames.join(', ')}]`);
     }
+    const legacyWithoutFileSize = rawHeader.length === LEGACY_SHEET_FIELD_SETS[1].length
+      && rawHeader.every((field, index) => String(field ?? '').trim() === LEGACY_SHEET_FIELD_SETS[1][index]);
+    const hasExistingRows = legacyWithoutFileSize ? await this.hasExistingRows() : false;
+    if (legacyWithoutFileSize && hasExistingRows) {
+      await this.insertTelegramFileSizeColumn();
+    }
     await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}?valueInputOption=RAW`, {
       values: [SHEET_FIELDS]
+    });
+  }
+
+  private async repairMisalignedRows(): Promise<void> {
+    const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
+    const rows = response.values ?? [];
+    const needsRepair = (rows as unknown[][]).some(row => {
+      const status = String(row[20] ?? '').trim();
+      const createdAt = String(row[21] ?? '').trim();
+      const updatedAt = String(row[22] ?? '').trim();
+      const legacyStatus = String(row[19] ?? '').trim();
+      const legacyCreatedAt = String(row[20] ?? '').trim();
+      const legacyUpdatedAt = String(row[21] ?? '').trim();
+      const validStatus = status === 'published' || status === 'draft';
+      const aligned = validStatus && Date.parse(createdAt) > 0 && Date.parse(updatedAt) > 0;
+      const misaligned = (legacyStatus === 'published' || legacyStatus === 'draft')
+        && Date.parse(legacyCreatedAt) > 0
+        && Date.parse(legacyUpdatedAt) > 0
+        && !Date.parse(String(row[22] ?? '').trim());
+      return !aligned && misaligned;
+    });
+    if (!needsRepair) return;
+    await this.insertTelegramFileSizeColumn();
+    await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}?valueInputOption=RAW`, {
+      values: [SHEET_FIELDS]
+    });
+  }
+
+  private async hasExistingRows(): Promise<boolean> {
+    const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
+    return ((response.values ?? []) as unknown[][]).some(row => Array.isArray(row) && row.some(value => String(value ?? '').trim() !== ''));
+  }
+
+  private async insertTelegramFileSizeColumn(): Promise<void> {
+    await this.request('POST', ':batchUpdate', {
+      requests: [{
+        insertDimension: {
+          range: { sheetId: await this.sheetId(), dimension: 'COLUMNS', startIndex: 19, endIndex: 20 },
+          inheritFromBefore: true
+        }
+      }]
     });
   }
 
@@ -59,6 +107,9 @@ export class GoogleSheetsStore implements CatalogStore {
 
   async upsert(record: MovieRecord): Promise<MovieRecord> {
     await this.sheets();
+    await this.sheetId();
+    await this.ensureHeaderRow();
+    await this.repairMisalignedRows();
     const values = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
     const rows = values.values as unknown[][] ?? [];
     const rowIndex = rows.findIndex(row => {
