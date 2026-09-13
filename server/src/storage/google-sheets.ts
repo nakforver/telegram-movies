@@ -65,24 +65,37 @@ export class GoogleSheetsStore implements CatalogStore {
     const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
     const rows = response.values ?? [];
     const needsRepair = (rows as unknown[][]).some(row => {
-      return !isAlignedRow(row) && isShiftedRow(row);
+      return (!isAlignedRow(row) && isShiftedRow(row)) || isIncompleteRow(row);
     });
     if (!needsRepair) return;
-    await this.insertTelegramFileSizeColumn();
-    await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}?valueInputOption=RAW`, {
-      values: [SHEET_FIELDS]
-    });
+    await this.fillMissingRowColumns();
   }
 
   private async fillMissingRowColumns(): Promise<void> {
     const response = await this.request('GET', `/values/${encodeURIComponent(await this.range('A2:AA1000'))}`);
     const rows = (response.values ?? []) as unknown[][];
     if (!rows.length) return;
+    const migrationTime = new Date().toISOString();
     const values = rows.map(row => {
       const next = Array.from({ length: SHEET_FIELDS.length }, (_, index) => String(row[index] ?? ''));
+      if (!isIncompleteRow(row)) return next;
+      const shiftedStatusIndex = row.findIndex((value, index) => index >= 19 && (String(value ?? '').trim() === 'published' || String(value ?? '').trim() === 'draft'));
+      const dateSearchStart = shiftedStatusIndex >= 0 ? shiftedStatusIndex + 1 : 19;
+      const shiftedDateIndexes = row
+        .map((value, index) => ({ value: String(value ?? '').trim(), index }))
+        .filter(({ value, index }) => index >= dateSearchStart && Date.parse(value) > 0)
+        .map(({ index }) => index);
       next[19] = next[19] || '';
+      next[20] = shiftedStatusIndex >= 0 ? String(row[shiftedStatusIndex] ?? 'published') : 'published';
+      next[21] = shiftedDateIndexes[0] !== undefined ? String(row[shiftedDateIndexes[0]] ?? '') : migrationTime;
+      next[22] = shiftedDateIndexes[1] !== undefined ? String(row[shiftedDateIndexes[1]] ?? '') : migrationTime;
+      next[23] = 'none';
+      next[24] = '';
+      next[25] = '';
+      next[26] = '';
       return next;
     });
+    if (!values.length) return;
     await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}`))}?valueInputOption=RAW`, { values });
   }
 
@@ -248,6 +261,16 @@ function isShiftedRow(row: unknown[]): boolean {
     && String(row[21] ?? '').trim() === ''
     && String(row[22] ?? '').trim() === ''
     && String(row[23] ?? '').trim() === '';
+}
+
+function isIncompleteRow(row: unknown[]): boolean {
+  if (!Array.isArray(row) || !row.some(value => String(value ?? '').trim() !== '')) return false;
+  const status = String(row[20] ?? '').trim();
+  const createdAt = String(row[21] ?? '').trim();
+  const updatedAt = String(row[22] ?? '').trim();
+  return !(status === 'published' || status === 'draft')
+    || !(Date.parse(createdAt) > 0)
+    || !(Date.parse(updatedAt) > 0);
 }
 
 export function columnLetter(number: number): string {

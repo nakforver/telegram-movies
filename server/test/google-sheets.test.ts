@@ -26,10 +26,19 @@ describe('GoogleSheetsStore', () => {
   const dataRange = `A2:${columnLetter(SHEET_FIELDS.length)}1000`;
 
   it('reads rows after validating the schema', async () => {
+    const alignedRow = SHEET_FIELDS.map((_, index) => {
+      if (index === 19) return '0';
+      if (index === 20) return 'published';
+      if (index === 21 || index === 22) return '2026-09-13T00:00:00Z';
+      if (index === 23) return 'none';
+      return '';
+    });
+    alignedRow[0] = 'movie-1';
+    alignedRow[1] = 'Movie';
     const request = mockSheetsRequest({
       '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
       [headerRange]: { values: [SHEET_FIELDS] },
-      [dataRange]: { values: [SHEET_FIELDS] }
+      [dataRange]: { values: [alignedRow] }
     });
 
     const rows = await new GoogleSheetsStore('spreadsheet-id').list();
@@ -102,14 +111,20 @@ describe('GoogleSheetsStore', () => {
       '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
       [headerRange]: { values: [SHEET_FIELDS] },
       [dataRange]: { values: [misalignedRow] },
-      ':batchUpdate': {}
+      ':batchUpdate': {},
+      'A2:AA?valueInputOption=RAW': {}
     });
 
     const rows = await new GoogleSheetsStore('spreadsheet-id').list();
 
     expect(rows).toHaveLength(1);
-    expect(request).toHaveBeenCalledWith('POST', ':batchUpdate', { requests: [{ insertDimension: { range: { sheetId: 0, dimension: 'COLUMNS', startIndex: 19, endIndex: 20 }, inheritFromBefore: true } }] });
-    expect(request).toHaveBeenCalledWith('PUT', `/values/${encodeURIComponent(`Movies!A1:${columnLetter(SHEET_FIELDS.length)}1`)}?valueInputOption=RAW`, { values: [SHEET_FIELDS] });
+    const fillCall = request.mock.calls.find(([method, path]) => method === 'PUT' && decodeURIComponent(String(path)).includes('Movies!A2:AA?valueInputOption=RAW'));
+    const values = (fillCall?.[2] as { values: string[][] }).values[0];
+    expect(values[19]).toBe('');
+    expect(values[20]).toBe('published');
+    expect(Date.parse(values[21])).toBeGreaterThan(0);
+    expect(Date.parse(values[22])).toBeGreaterThan(0);
+    expect(values.slice(23)).toEqual(['none', '', '', '']);
   });
 
   it('rejects an unsupported existing header layout', async () => {
