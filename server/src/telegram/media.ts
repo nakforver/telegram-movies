@@ -1,5 +1,5 @@
 
-const TELEGRAM_API = 'https://api.telegram.org';
+import { telegramApiBase } from './base.js';
 
 export interface TelegramFile {
   file_id: string;
@@ -10,7 +10,8 @@ export interface TelegramFile {
 
 export function resolveTelegramFileUrl(fileId: string): Promise<{ url: string; size?: number; expiresAt: string }> {
   const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN ?? '';
-  return fetch(`${TELEGRAM_API}/bot${telegramBotToken}/getFile`, {
+  const apiBase = telegramApiBase();
+  return fetch(`${apiBase}/bot${telegramBotToken}/getFile`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ file_id: fileId })
@@ -25,7 +26,7 @@ export function resolveTelegramFileUrl(fileId: string): Promise<{ url: string; s
         throw new Error(description);
       }
       return {
-        url: new URL(result.result.file_path, `${TELEGRAM_API}/file/bot${telegramBotToken}/`).href,
+        url: `${apiBase}/file/bot${telegramBotToken}/${result.result.file_path}`,
         size: result.result.file_size,
         expiresAt: new Date(Date.now() + 55 * 60 * 1000).toISOString()
       };

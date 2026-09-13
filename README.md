@@ -82,6 +82,7 @@ NODE_ENV=production
 PORT=8080
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+TELEGRAM_API_BASE=https://api.telegram.org
 MINI_APP_URL=
 GOOGLE_SPREADSHEET_ID=
 GOOGLE_SERVICE_ACCOUNT_EMAIL=
@@ -175,9 +176,9 @@ Telegram channel posts are the ingestion trigger. On webhook receipt, the server
 4. `GET /api/play/:id` returns a short-lived Wasmer backend URL with an HMAC playback token. The browser never receives Telegram or R2 credentials.
 5. `GET /api/media/:id` verifies the token, creates a short-lived presigned R2 GET, forwards Range requests, and streams the response with `206 Partial Content` support.
 
-The public Telegram Bot API can download only files up to approximately 20 MB. The webhook's `file_size` is checked before transfer; larger movies are stored in Sheets with a clear `media_status_reason` and remain non-playable instead of being faked. This is a Telegram Bot API limitation, not a Wasmer or R2 limitation.
+The public Telegram Bot API can resolve and download only files up to approximately 20 MB. Larger movies are stored in Sheets (or marked by an authenticated retry) with a clear `media_status_reason` and remain non-playable instead of being faked. This is a Telegram Bot API limitation, not a Wasmer or R2 limitation.
 
-To publish full-size movies, upload the video file to R2 or another supported object storage/CDN and set its catalog row to `media_source=r2` plus the object key. Keeping Telegram as the only upload trigger requires either a self-hosted Telegram Bot API server with a worker that moves local Telegram files into R2, or an upload/ingestion workflow that stores the file in R2 before publishing the Telegram catalog trigger.
+For full-size channel-only uploads, run a self-hosted Telegram Bot API server and expose it to Wasmer through an authenticated HTTPS reverse proxy. Set `TELEGRAM_API_BASE` to that proxy endpoint, configure R2, redeploy, run `npm run telegram:setup`, then republish the channel video or call `POST /api/admin/movies/:movieId/transfer` for an existing record. Without that server, upload the video to R2 separately and set its row to `media_source=r2` plus the object key.
 
 Cloudflare setup:
 

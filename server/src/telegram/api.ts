@@ -1,10 +1,11 @@
 import { telegramBotToken } from '../config.js';
+import { telegramApiBase } from './base.js';
 
-const base = 'https://api.telegram.org';
+const base = () => telegramApiBase();
 
 async function call<T>(method: string, body: Record<string, unknown>): Promise<T> {
   if (!telegramBotToken) throw new Error('TELEGRAM_BOT_TOKEN is not configured');
-  const response = await fetch(`${base}/bot${telegramBotToken}/${method}`, {
+  const response = await fetch(`${base()}/bot${telegramBotToken}/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)

@@ -48,6 +48,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         miniAppUrl: Boolean(miniAppUrl),
         admin: Boolean(adminSecret),
         telegramWebhook: Boolean(telegramWebhookSecret),
+        telegramBotApi: process.env.TELEGRAM_API_BASE ? 'self-hosted' : 'public',
         cloudflareR2: Boolean(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET)
       }});
       return true;
