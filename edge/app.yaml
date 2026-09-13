@@ -1,0 +1,5 @@
+kind: wasmer.io/App.v0
+name: telegram-movies
+owner: wechatfree011
+package: wechatfree011/telegram-movies@=1.0.5
+app_id: da_n73IatAUWBgG

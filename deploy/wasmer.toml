@@ -1,0 +1,24 @@
+[package]
+name = "wechatfree011/telegram-movies"
+version = "1.0.5"
+entrypoint = "telegram-movies"
+description = "Telegram Movie Library Mini App"
+license = "MIT"
+readme = "../README.md"
+repository = "https://github.com/nakforver/telegram-movies"
+
+[dependencies]
+"wasmer/edgejs-quickjs" = "=0.2.0"
+
+[fs]
+"/server/dist" = "../server/dist"
+"/frontend/dist" = "../frontend/dist"
+"/package.json" = "../package.json"
+
+[[command]]
+name = "telegram-movies"
+module = "wasmer/edgejs-quickjs:edge"
+runner = "https://webc.org/runner/wasi"
+
+[command.annotations.wasi]
+main-args = ["/server/dist/main.js"]

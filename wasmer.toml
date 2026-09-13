@@ -1,0 +1,9 @@
+[package]
+name = "wechatfree011/telegram-movies"
+version = "1.0.3"
+description = "Telegram Movie Library Mini App"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/nakforver/telegram-movies"
+
+[dependencies]

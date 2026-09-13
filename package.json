@@ -1,0 +1,26 @@
+{
+  "name": "telegram-movies",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspace server && npm run build --workspace frontend",
+    "dev": "concurrently -k \"npm run dev --workspace server\" \"npm run dev --workspace frontend\"",
+    "start": "node server/dist/main.js",
+    "test": "npm test --workspace server && npm run typecheck --workspace frontend",
+    "test:e2e": "npm run test:e2e --workspace frontend",
+    "telegram:setup": "npm exec --workspace server -- tsx src/setup-telegram.ts",
+    "wasmer:deploy": "./scripts/deploy-wasmer.sh"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "concurrently": "^9.0.0"
+  }
+}
