@@ -1,15 +1,36 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SHEET_FIELDS } from '../src/storage/schema.js';
 
+process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = 'test@example.iam.gserviceaccount.com';
+process.env.GOOGLE_PRIVATE_KEY = 'test-key';
+
+const { GoogleSheetsStore, columnLetter } = await import('../src/storage/google-sheets.js');
+
 describe('GoogleSheetsStore', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function mockSheetsRequest(responses: Record<string, unknown>) {
+    return vi.spyOn(GoogleSheetsStore.prototype as unknown as { request: (...arguments_: unknown[]) => Promise<unknown> }, 'request')
+      .mockImplementation(async (_method: string, path: string) => {
+        const decodedPath = decodeURIComponent(path);
+        const response = Object.entries(responses).find(([key]) => decodedPath.includes(key))?.[1];
+        if (response === undefined) throw new Error(`Unexpected Sheets request: ${path}`);
+        if (response instanceof Error) throw response;
+        return response;
+      });
+  }
+  const headerRange = `A1:${columnLetter(SHEET_FIELDS.length)}1`;
+  const dataRange = `A2:${columnLetter(SHEET_FIELDS.length)}1000`;
+
   it('reads rows after validating the schema', async () => {
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = 'test@example.iam.gserviceaccount.com';
-    process.env.GOOGLE_PRIVATE_KEY = 'test-key';
-    const { GoogleSheetsStore, columnLetter } = await import('../src/storage/google-sheets.js');
-    const request = vi.spyOn(GoogleSheetsStore.prototype as unknown as { request: (...arguments_: unknown[]) => Promise<unknown> }, 'request')
-      .mockResolvedValueOnce({ sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] })
-      .mockResolvedValueOnce({ values: [SHEET_FIELDS] })
-      .mockResolvedValueOnce({ values: [SHEET_FIELDS] });
+    const request = mockSheetsRequest({
+      '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
+      [headerRange]: { values: [SHEET_FIELDS] },
+      [dataRange]: { values: [SHEET_FIELDS] }
+    });
 
     const rows = await new GoogleSheetsStore('spreadsheet-id').list();
 
@@ -17,45 +38,67 @@ describe('GoogleSheetsStore', () => {
     expect(Object.keys(rows[0] ?? {})).toEqual([...SHEET_FIELDS]);
     expect(request).toHaveBeenCalledWith('GET', `/values/${encodeURIComponent(`Movies!A1:${columnLetter(SHEET_FIELDS.length)}1`)}`);
     expect(request).not.toHaveBeenCalledWith('PUT', expect.any(String), expect.anything());
-    request.mockRestore();
   });
 
   it('creates the header row before listing when it is missing', async () => {
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = 'test@example.iam.gserviceaccount.com';
-    process.env.GOOGLE_PRIVATE_KEY = 'test-key';
-    const { GoogleSheetsStore, columnLetter } = await import('../src/storage/google-sheets.js');
-    const request = vi.spyOn(GoogleSheetsStore.prototype as unknown as { request: (...arguments_: unknown[]) => Promise<unknown> }, 'request')
-      .mockResolvedValueOnce({ sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] })
-      .mockResolvedValueOnce({ values: [[]] })
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ values: [] });
+    const request = mockSheetsRequest({
+      '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
+      [headerRange]: { values: [[]] },
+      [dataRange]: { values: [] }
+    });
 
     const rows = await new GoogleSheetsStore('spreadsheet-id').list();
 
     expect(rows).toEqual([]);
     expect(request).toHaveBeenCalledWith('PUT', `/values/${encodeURIComponent(`Movies!A1:${columnLetter(SHEET_FIELDS.length)}1`)}?valueInputOption=RAW`, { values: [SHEET_FIELDS] });
-    request.mockRestore();
   });
-});
+
+  it('migrates the supported 22-column header to the full schema', async () => {
+    const request = mockSheetsRequest({
+      '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
+      [headerRange]: { values: [SHEET_FIELDS.slice(0, 22)] },
+      [dataRange]: { values: [] }
+    });
+
+    const rows = await new GoogleSheetsStore('spreadsheet-id').list();
+
+    expect(rows).toEqual([]);
+    expect(request).toHaveBeenCalledWith('PUT', `/values/${encodeURIComponent(`Movies!A1:${columnLetter(SHEET_FIELDS.length)}1`)}?valueInputOption=RAW`, { values: [SHEET_FIELDS] });
+  });
+
+  it('rejects an unsupported existing header layout', async () => {
+    mockSheetsRequest({
+      '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
+      [headerRange]: { values: [['movie_id', 'unexpected_header']] },
+      [dataRange]: { values: [] }
+    });
+
+    await expect(new GoogleSheetsStore('spreadsheet-id').list()).rejects.toThrow('Worksheet headers do not match the supported catalog schema');
+  });
 
   it('updates an existing row matched by Telegram chat and message IDs instead of appending', async () => {
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = 'test@example.iam.gserviceaccount.com';
-    process.env.GOOGLE_PRIVATE_KEY = 'test-key';
-    const { GoogleSheetsStore, columnLetter } = await import('../src/storage/google-sheets.js');
-    const existingRow = [
-      'existing-id', 'Existing Title', '', '', '', '', '', 'Movies', '', '', '', '', '', 'movie', '', '', '-100123', '456', '', 'published', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
-    ];
-    const token = vi.spyOn(GoogleSheetsStore.prototype as unknown as { getAccessToken: () => Promise<string> }, 'getAccessToken').mockResolvedValue('token');
-    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ values: [existingRow] }) }));
-    vi.stubGlobal('fetch', fetchSpy);
+    const existingRow = [...SHEET_FIELDS];
+    existingRow[0] = 'existing-id';
+    existingRow[1] = 'Existing Title';
+    existingRow[16] = '-100123';
+    existingRow[17] = '456';
+    const request = mockSheetsRequest({
+      [dataRange]: { values: [existingRow] },
+      'A2:': {}
+    });
+    const record = SHEET_FIELDS.reduce((accumulator, field) => ({ ...accumulator, [field]: '' }), {}) as Record<string, string>;
 
-    const next = await new GoogleSheetsStore('spreadsheet-id').upsert({ ...SHEET_FIELDS, movie_id: 'new-id', title: 'New Title', telegram_chat_id: '-100123', telegram_message_id: '456' });
+    const next = await new GoogleSheetsStore('spreadsheet-id').upsert({
+      ...record,
+      movie_id: 'new-id',
+      title: 'New Title',
+      telegram_chat_id: '-100123',
+      telegram_message_id: '456'
+    } as Parameters<GoogleSheetsStore['upsert']>[0]);
 
     expect(next).toMatchObject({ movie_id: 'new-id', title: 'New Title', telegram_chat_id: '-100123', telegram_message_id: '456' });
-    expect(fetchSpy.mock.calls.some(([, options]) => String(options?.method).toUpperCase() === 'POST' && String(options?.body ?? '').includes('"new-id"'))).toBe(false);
-    const putCall = fetchSpy.mock.calls.find(([, options]) => String(options?.method).toUpperCase() === 'PUT');
-    expect(putCall).toBeDefined();
-    expect(String(putCall?.[1]?.body)).toContain('"new-id"');
-    token.mockRestore();
-    vi.unstubAllGlobals();
+    expect(request).not.toHaveBeenCalledWith('POST', expect.stringContaining(':append'), expect.anything());
+    const updateCall = request.mock.calls.find(([method, path]) => method === 'PUT' && /Movies!A2:[A-Z]+2/.test(decodeURIComponent(String(path))));
+    expect((updateCall?.[2] as { values: string[][] }).values[0][0]).toBe('new-id');
   });
+});

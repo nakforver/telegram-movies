@@ -4,31 +4,24 @@ import { CatalogService } from '../src/storage/catalog-service.js';
 import { MemoryStore } from '../src/storage/memory.js';
 import { handleMedia } from '../src/http/media.js';
 import { signPlaybackToken } from '../src/http/playback-tokens.js';
-import { resolveTelegramFileUrl } from '../src/telegram/media.js';
 
-process.env.TELEGRAM_BOT_TOKEN = 'test-token';
 process.env.PLAYBACK_TOKEN_SECRET = 'test-playback-secret';
+process.env.R2_ACCOUNT_ID = 'test-account';
+process.env.R2_ACCESS_KEY_ID = 'test-access-key';
+process.env.R2_SECRET_ACCESS_KEY = 'test-secret-key';
+process.env.R2_BUCKET = 'test-bucket';
 const realFetch = fetch.bind(globalThis);
 
-describe('Telegram media endpoint', () => {
+describe('R2 media endpoint', () => {
   let server: Server;
   const catalog = new CatalogService(new MemoryStore([
     {
-      movie_id: 'movie-1',
-      title: 'Action Movie',
-      type: 'movie',
-      status: 'published',
-      created_at: '2026-01-01T00:00:00Z',
-      telegram_chat_id: '-100123',
-      telegram_message_id: '456',
-      telegram_file_id: 'test-file-id'
+      movie_id: 'movie-1', title: 'Action Movie', type: 'movie', status: 'published', created_at: '2026-01-01T00:00:00Z',
+      media_source: 'r2', media_object_key: 'movies/movie-1.mp4'
     },
     {
-      movie_id: 'missing-file',
-      title: 'Missing File',
-      type: 'movie',
-      status: 'published',
-      created_at: '2026-01-01T00:00:00Z'
+      movie_id: 'processing', title: 'Processing Movie', type: 'movie', status: 'published', created_at: '2026-01-01T00:00:00Z',
+      media_source: 'none', media_object_key: '', media_status_reason: 'Video processing is unavailable because this title has not been transferred to R2.'
     }
   ]), 0);
 
@@ -53,60 +46,60 @@ describe('Telegram media endpoint', () => {
 
   const base = () => `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const mediaPath = (movieId: string) => `/api/media/${movieId}?token=${signPlaybackToken(movieId)}`;
-  function stubTelegram(size = 5, content = new Uint8Array([1, 2, 3, 4, 5])) {
+  function stubR2(content = new Uint8Array([1, 2, 3, 4, 5])) {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.startsWith('http://127.0.0.1:')) return realFetch(url, init);
-      if (url.includes('/bot') && !url.includes('/file/bot')) {
-        return new Response(JSON.stringify({ ok: true, result: { file_id: 'test-file-id', file_path: 'videos/test.mp4', file_size: size } }), { headers: { 'content-type': 'application/json' } });
+      if (String(url).startsWith('http://127.0.0.1:')) return realFetch(url, init);
+      const range = (init?.headers as Record<string, string> | undefined)?.range;
+      if (range === 'bytes=1-3') {
+        return new Response(new Uint8Array([2, 3, 4]), {
+          status: 206,
+          headers: { 'content-type': 'video/mp4', 'content-length': '3', 'content-range': 'bytes 1-3/5', 'accept-ranges': 'bytes' }
+        });
       }
-      return new Response(content as unknown as BodyInit, {
-        headers: { 'content-type': 'video/mp4', 'content-length': String(content.byteLength) },
+      return new Response(content, {
+        headers: { 'content-type': 'video/mp4', 'content-length': String(content.byteLength), 'accept-ranges': 'bytes' }
       });
     });
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;
   }
 
-  it('returns 200 and streams resolved Telegram media', async () => {
-    const fetchMock = stubTelegram();
+  it('returns 200 and streams R2 media', async () => {
+    const fetchMock = stubR2();
     const response = await fetch(`${base()}${mediaPath('movie-1')}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('video/mp4');
     expect(response.headers.get('content-length')).toBe('5');
-    expect(bytes).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
-    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/bot'), expect.anything());
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+    const request = fetchMock.mock.calls.find(([url]) => String(url).includes('/test-bucket/movies/movie-1.mp4?'));
+    expect(String(request?.[0])).toContain('X-Amz-Signature=');
   });
 
-  it('orders a range request and returns 206 with the requested portion', async () => {
-    const media = new Uint8Array([2, 3, 4]);
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.startsWith('http://127.0.0.1:')) return realFetch(url, init);
-      if (url.includes('/bot') && !url.includes('/file/bot')) {
-        return new Response(JSON.stringify({ ok: true, result: { file_id: 'test-file-id', file_path: 'videos/test.mp4', file_size: 5 } }));
-      }
-      expect(init?.headers).toEqual({ range: 'bytes=1-3' });
-      return new Response(media, {
-        status: 206,
-        headers: { 'content-type': 'video/mp4', 'content-length': '3', 'content-range': 'bytes 1-3/5', 'accept-ranges': 'bytes' }
-      });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('forwards a Range request and returns 206 with the requested portion', async () => {
+    const fetchMock = stubR2();
     const response = await fetch(`${base()}${mediaPath('movie-1')}`, { headers: { range: 'bytes=1-3' } });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-
     expect(response.status).toBe(206);
     expect(response.headers.get('content-range')).toBe('bytes 1-3/5');
     expect(response.headers.get('content-length')).toBe('3');
-    expect(bytes).toEqual(media);
-    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/file/bot'), expect.objectContaining({ headers: { range: 'bytes=1-3' } }));
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([2, 3, 4]));
+    expect((fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>).range).toBe('bytes=1-3');
   });
 
-  it('rejects an unsatisfiable range request', async () => {
-    stubTelegram();
+  it('rejects an unsatisfiable range', async () => {
+    stubR2();
     const response = await fetch(`${base()}${mediaPath('movie-1')}`, { headers: { range: 'bytes=10-20' } });
     expect(response.status).toBe(416);
+  });
+
+  it('requires a playback token', async () => {
+    const response = await fetch(`${base()}/api/media/movie-1`);
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 409 for a movie not transferred to R2', async () => {
+    const response = await fetch(`${base()}${mediaPath('processing')}`);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: 'Video processing is unavailable because this title has not been transferred to R2.' });
   });
 
   it('returns 404 for a missing movie', async () => {
@@ -114,51 +107,12 @@ describe('Telegram media endpoint', () => {
     expect(response.status).toBe(404);
   });
 
-  it('returns 404 when a catalog record has no Telegram file ID', async () => {
-    const response = await fetch(`${base()}${mediaPath('missing-file')}`);
-    expect(response.status).toBe(404);
-  });
-
-  it('returns 502 when Telegram getFile fails', async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+  it('returns 502 when R2 fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (url.startsWith('http://127.0.0.1:')) return realFetch(url, init);
-      return new Response(JSON.stringify({ ok: false, description: 'Bad file' }), { status: 400 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+      return new Response('Unavailable', { status: 503 });
+    }));
     const response = await fetch(`${base()}${mediaPath('movie-1')}`);
     expect(response.status).toBe(502);
-  });
-
-  it('requires a valid playback token', async () => {
-    const response = await fetch(`${base()}/movie-1`);
-    expect(response.status).toBe(401);
-  });
-
-  it('returns 413 when Telegram reports that the file is too large', async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.startsWith('http://127.0.0.1:')) return realFetch(url, init);
-      return new Response(JSON.stringify({ ok: false, description: 'Bad Request: file is too big' }), { status: 400 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const response = await fetch(`${base()}${mediaPath('movie-1')}`);
-    expect(response.status).toBe(413);
-  });
-});
-
-describe('resolveTelegramFileUrl', () => {
-  it('returns the file URL and expiry metadata', async () => {
-    let fetchMock: ReturnType<typeof vi.fn>;
-    fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true, result: { file_id: 'test-file-id', file_path: 'videos/test.mp4', file_size: 25 } })));
-    vi.stubGlobal('fetch', fetchMock);
-    const result = await resolveTelegramFileUrl('test-file-id');
-
-    expect(result.url).toContain('/file/bot');
-    expect(result.size).toBe(25);
-    expect(result.expiresAt).toBeTruthy();
-  });
-
-  it('throws a clear error when Telegram fails', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: false, description: 'Bad request' }), { status: 400 })));
-    await expect(resolveTelegramFileUrl('bad-file-id')).rejects.toThrow('Bad request');
   });
 });

@@ -7,17 +7,20 @@ const update = {
     chat: { id: -1001234 },
     message_id: 4567,
     caption: 'New Popmovies Action Film\nUploaded from Telegram',
-    video: { file_id: 'test-file-id', file_name: 'new-popmovies-action-film.mp4' },
+    video: { file_id: 'test-file-id', file_name: 'new-popmovies-action-film.mp4', file_size: 1024 },
     date: 1700000000
   }
 };
 
 describe('Telegram channel movie ingestion', () => {
-  it('maps a channel video post to the 22-column movie schema', () => {
+  it('maps a channel video post to the catalog schema', () => {
     const movie = telegramUpdateToMovie(update);
 
     expect(movie).not.toBeNull();
-    expect(Object.keys(movie ?? {})).toEqual([...SHEET_FIELDS]);
+    const keys = Object.keys(movie ?? {});
+    expect(SHEET_FIELDS.slice(0, -4).every(field => keys.includes(field))).toBe(true);
+    expect(keys).toContain('telegram_file_size');
+    expect(movie?.telegram_file_size).toBe(1024);
     expect(movie).toMatchObject({
       title: 'New Popmovies Action Film',
       description: 'Uploaded from Telegram',

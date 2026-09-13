@@ -32,10 +32,17 @@ export function normalizeMovie(row: MovieRecord): Movie | null {
     telegram_chat_id: required(row.telegram_chat_id),
     telegram_message_id: required(row.telegram_message_id),
     telegram_file_id: required(row.telegram_file_id),
+    telegram_file_size: row.telegram_file_size === undefined || row.telegram_file_size === null
+      ? undefined
+      : Number(row.telegram_file_size),
     status: asStatus(row.status),
     created_at: required(row.created_at),
     updated_at: required(row.updated_at),
-    telegram_file_name: required(row.telegram_file_name)
+    telegram_file_name: required(row.telegram_file_name),
+    media_source: required(row.media_source) === 'r2' ? 'r2' as const : 'none' as const,
+    media_url: required(row.media_url),
+    media_object_key: required(row.media_object_key),
+    media_status_reason: required(row.media_status_reason)
   };
 
   if (!record.movie_id || !record.title) return null;

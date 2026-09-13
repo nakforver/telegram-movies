@@ -5,6 +5,7 @@ import { CatalogService } from '../storage/catalog-service.js';
 import { MemoryStore } from '../storage/memory.js';
 import { GoogleSheetsStore } from '../storage/google-sheets.js';
 import { telegramUpdateToMovie, type TelegramUpdate } from '../telegram/ingestion.js';
+import { transferTelegramMovieToR2 } from '../telegram/transfer.js';
 import { categories, episodes, findEpisode, normalizeQuery, publicMovie, queryCatalog, searchMovies, toPlaySource } from '../domain/catalog.js';
 import { signPlaybackToken } from './playback-tokens.js';
 import type { MovieRecord } from '../types.js';
@@ -33,7 +34,10 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         else if (command === '/help') await sendMessage(chatId, 'Commands: /start, /movies, /search, /help.', miniAppUrl);
       }
       const ingestedMovie = telegramUpdateToMovie(update);
-      if (ingestedMovie) await catalog.upsert(ingestedMovie);
+      if (ingestedMovie) {
+        const transfer = await transferTelegramMovieToR2(ingestedMovie);
+        await catalog.upsert(transfer.record);
+      }
       success(response, { handled: true });
       return true;
     }
@@ -43,7 +47,8 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         telegramBot: Boolean(telegramBotToken),
         miniAppUrl: Boolean(miniAppUrl),
         admin: Boolean(adminSecret),
-        telegramWebhook: Boolean(telegramWebhookSecret)
+        telegramWebhook: Boolean(telegramWebhookSecret),
+        cloudflareR2: Boolean(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET)
       }});
       return true;
     }

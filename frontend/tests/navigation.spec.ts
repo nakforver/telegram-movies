@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -89,23 +90,51 @@ test('empty catalog renders a clear empty state and search results message', asy
   await expect(page.getByText('No movies found.')).toBeVisible();
 });
 
-test('player shows a clear message instead of a black area when media is too large', async ({ page }) => {
+test('player renders an HTML5 video for a playable R2 source', async ({ page }) => {
+  const movieId = 'r2-movie';
+  await page.route('**/api/play/**', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { movieId, title: 'R2 movie', type: 'movie', season: null, episode: null, source: 'r2', url: `/api/media/${movieId}?token=signed-token`, playable: true } })
+    });
+  });
+  await page.addInitScript(() => {
+    Object.defineProperty(HTMLVideoElement.prototype, 'onerror', { value: null, writable: true });
+  });
+  await page.route('**/api/media/**', async route => {
+    expect(route.request().url()).toBe(`http://127.0.0.1:5173/api/media/${movieId}?token=signed-token`);
+    const sample = await readFile('tests/fixtures/sample.mp4');
+    await route.fulfill({ status: 200, headers: { 'content-type': 'video/mp4', 'content-length': String(sample.byteLength) }, body: sample });
+  });
+
+  await page.goto(`/player/${movieId}`);
+
+  const video = page.locator('video.player');
+  await expect(video).toHaveCount(1);
+  await expect(video).toHaveAttribute('controls');
+  await expect(video).toHaveAttribute('playsinline');
+  await expect(video).toHaveAttribute('preload', 'metadata');
+  await expect(video).toHaveAttribute('src', `/api/media/${movieId}?token=signed-token`);
+});
+
+test('player shows a clear message instead of a black area when transfer is unavailable', async ({ page }) => {
   const movieId = 'telegram--1004296358811-8';
   await page.route('**/api/play/**', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: { movieId, title: 'Telegram movie', type: 'movie', season: null, episode: null, source: 'telegram', url: `/api/media/${movieId}?token=signed-token`, playable: true } })
+      body: JSON.stringify({ success: true, data: { movieId, title: 'Telegram movie', type: 'movie', season: null, episode: null, source: 'none', url: `/api/media/${movieId}?token=signed-token`, playable: true, reason: 'This video is too large for automatic Telegram transfer. The video source must be moved to supported object storage or CDN hosting.' } })
     });
   });
   await page.route('**/api/media/**', async route => {
     expect(route.request().url()).toBe(`http://127.0.0.1:5173/api/media/${movieId}?token=signed-token`);
-    await route.fulfill({ status: 413, body: 'Too large' });
+    await route.fulfill({ status: 409, body: 'Transfer unavailable' });
   });
 
   await page.goto(`/player/${movieId}`);
 
-  await expect(page.getByText('This video is too large for the current Telegram playback gateway. The video source must be moved to supported object storage or CDN hosting before it can be played.')).toBeVisible();
+  await expect(page.getByText('This video is too large for automatic Telegram transfer. The video source must be moved to supported object storage or CDN hosting.')).toBeVisible();
   await expect(page.locator('video.player')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '▶ Play' })).toHaveCount(0);
 });

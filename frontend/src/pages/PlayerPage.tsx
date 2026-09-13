@@ -18,7 +18,7 @@ export default function PlayerPage() {
       .then(async playableSource => {
         if (!playableSource.url) return playableSource;
         const response = await fetch(playableSource.url, { method: 'HEAD' });
-        if (response.status === 413) throw new Error('This video is too large for the current Telegram playback gateway. The video source must be moved to supported object storage or CDN hosting before it can be played.');
+        if (response.status === 409) throw new Error(playableSource.reason ?? 'Video processing is unavailable because this title has not been transferred to R2.');
         if (!response.ok) throw new Error('Video source is unavailable. Please try again.');
         return playableSource;
       })
@@ -52,7 +52,7 @@ export default function PlayerPage() {
         src={source.url}
         onError={() => {
           setMediaStatus('error');
-          setStatus('Video source unavailable. This title may be too large for the Telegram playback gateway or the source may have expired.');
+          setStatus('Video source unavailable. The R2 media source may be missing or expired.');
         }}
         onLoadedMetadata={() => setStatus('Video loaded.')}
         onWaiting={() => setStatus('Buffering…')} onPlaying={() => setStatus('Playing')} onPause={() => setStatus('Paused')}

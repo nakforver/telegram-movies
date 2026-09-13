@@ -18,10 +18,15 @@ export interface MovieRecord {
   telegram_chat_id?: string;
   telegram_message_id?: string;
   telegram_file_id?: string;
+  telegram_file_size?: number;
   status: 'published' | 'draft';
   created_at?: string;
   updated_at?: string;
   telegram_file_name?: string;
+  media_source?: 'r2' | 'none';
+  media_url?: string;
+  media_object_key?: string;
+  media_status_reason?: string;
 }
 
 
@@ -57,7 +62,8 @@ export interface PlaySource {
   telegramChatId?: string;
   telegramMessageId?: string;
   telegramFileId?: string;
-  source: 'telegram' | 'external' | 'none';
+  mediaObjectKey?: string;
+  source: 'r2' | 'none';
   url?: string;
   expiresAt?: string;
   playable: boolean;

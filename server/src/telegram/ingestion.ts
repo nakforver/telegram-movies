@@ -3,6 +3,7 @@ import type { MovieRecord } from '../types.js';
 interface TelegramFile {
   file_id?: string;
   file_name?: string;
+  file_size?: number;
   mime_type?: string;
 }
 
@@ -55,6 +56,7 @@ export function telegramUpdateToMovie(update: TelegramUpdate): MovieRecord | nul
     telegram_chat_id: telegramChatId,
     telegram_message_id: telegramMessageId,
     telegram_file_id: media.file_id,
+    telegram_file_size: media.file_size,
     status: 'published',
     created_at: new Date(post.date ? post.date * 1000 : Date.now()).toISOString(),
     updated_at: new Date().toISOString()

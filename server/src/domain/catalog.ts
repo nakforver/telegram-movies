@@ -109,17 +109,25 @@ export function toPlaySource(movie: Movie | undefined): PlaySource | null {
   if (movie.status !== 'published') {
     return { ...base(movie), source: 'none', playable: false, reason: 'Movie is not published' };
   }
-  if (!movie.telegram_chat_id || !movie.telegram_message_id || !movie.telegram_file_id) {
-    return { ...base(movie), source: 'none', playable: false, reason: 'Telegram chat, message, and file references are required' };
+  if (movie.media_source === 'r2' && movie.media_object_key) {
+    return {
+      ...base(movie),
+      source: 'r2',
+      mediaObjectKey: movie.media_object_key,
+      url: `/api/media/${encodeURIComponent(movie.movie_id)}`,
+      playable: true
+    };
   }
   return {
     ...base(movie),
-    telegramChatId: movie.telegram_chat_id,
-    telegramMessageId: movie.telegram_message_id,
+    telegramChatId: movie.telegram_chat_id || undefined,
+    telegramMessageId: movie.telegram_message_id || undefined,
     telegramFileId: movie.telegram_file_id || undefined,
-    source: 'telegram',
-    url: `/api/media/${encodeURIComponent(movie.movie_id)}`,
-    playable: true
+    source: 'none',
+    playable: false,
+    reason: movie.media_status_reason || (movie.telegram_file_size && movie.telegram_file_size > 20 * 1024 * 1024
+      ? 'This video is too large for automatic Telegram transfer. The video source must be moved to supported object storage or CDN hosting.'
+      : 'Video processing is unavailable because this title has not been transferred to R2.')
   };
 }
 

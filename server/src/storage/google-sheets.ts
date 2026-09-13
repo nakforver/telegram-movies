@@ -37,7 +37,12 @@ export class GoogleSheetsStore implements CatalogStore {
 
   private async ensureHeaderRow(): Promise<void> {
     const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}`);
-    if (this.validateHeaders(response.values?.[0])) return;
+    const rawHeader = Array.isArray(response.values?.[0]) ? response.values[0] : [];
+    const header = rawHeader.filter(value => String(value ?? '').trim() !== '');
+    if (this.validateHeaders(header)) return;
+    const isKnownPrefix = rawHeader.length < SHEET_FIELDS.length
+      && rawHeader.every((field, index) => String(field ?? '').trim() === SHEET_FIELDS[index]);
+    if (rawHeader.length && !isKnownPrefix) throw new Error('Worksheet headers do not match the supported catalog schema');
     await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}?valueInputOption=RAW`, {
       values: [SHEET_FIELDS]
     });

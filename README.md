@@ -9,9 +9,9 @@ Telegram Mini App
         ↓
 Wasmer API + static frontend
         ↓
-Google Sheets catalog
+Telegram webhook → Cloudflare R2
         ↓
-Telegram Bot API / stored Telegram references
+Google Sheets catalog
         ↓
 HTML5 player
 ```
@@ -45,10 +45,10 @@ HTML5 player
 4. Add an exact header row in row 1:
 
 ```text
-movie_id | title | title_km | original_title | description | poster_url | backdrop_url | category | genre | year | country | duration | rating | type | season | episode | telegram_chat_id | telegram_message_id | telegram_file_id | status | created_at | updated_at | telegram_file_name
+movie_id | title | title_km | original_title | description | poster_url | backdrop_url | category | genre | year | country | duration | rating | type | season | episode | telegram_chat_id | telegram_message_id | telegram_file_id | telegram_file_size | status | created_at | updated_at | media_source | media_url | media_object_key | media_status_reason
 ```
 
-Values are read starting at row 2. Set `status` to `published` or `draft`. Set `type` to `movie` or `series`.
+Values are read starting at row 2. Set `status` to `published` or `draft`, `type` to `movie` or `series`, and `media_source` to `r2` only after the object exists in R2. Existing supported 22-column sheets are automatically upgraded to the full schema.
 
 For a series, store a parent row (without `episode`) and one row per episode. Use the same `title` for episode rows, include `season`, and number `episode`. Each row may have its own Telegram chat/message/file reference.
 
@@ -91,6 +91,11 @@ ADMIN_SECRET=
 FRONTEND_URL=
 CACHE_TTL_MS=300000
 WASMER_TOKEN=
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=
+PLAYBACK_TOKEN_SECRET=
 ```
 
 - Backend-only secrets must not use the `VITE_` prefix.
@@ -161,18 +166,24 @@ Missing or invalid admin credentials are rejected server-side. Admin APIs do not
 
 ## Video Playback Architecture
 
-The catalog stores durable Telegram references: chat ID, message ID, and optionally file ID. Temporary Telegram download URLs are not persisted and are not exposed to the frontend.
+Telegram channel posts are the ingestion trigger. On webhook receipt, the server maps the post to the catalog schema and attempts an automatic Telegram-to-R2 transfer:
 
-The first release intentionally avoids proxying media. The player is HTML5-video-ready and provides play, pause, seek, volume, fullscreen, buffering, pause, and error states. `GET /api/play/:id` verifies a published record has the durable Telegram chat/message reference and returns a non-playable status when it does not.
+1. `getFile` resolves a temporary Telegram download URL.
+2. The server streams the response body directly to R2 using a signed `PUT`.
+3. Only after R2 confirms the upload does the backend write `media_source=r2`, `media_object_key`, and durable R2 metadata to Google Sheets.
+4. `GET /api/play/:id` returns a short-lived Wasmer backend URL with an HMAC playback token. The browser never receives Telegram or R2 credentials.
+5. `GET /api/media/:id` verifies the token, creates a short-lived presigned R2 GET, forwards Range requests, and streams the response with `206 Partial Content` support.
 
-This policy exists because:
+The public Telegram Bot API can download only files up to approximately 20 MB. The webhook's `file_size` is checked before transfer; larger movies are stored in Sheets with a clear `media_status_reason` and remain non-playable instead of being faked. This is a Telegram Bot API limitation, not a Wasmer or R2 limitation.
 
-- Bot `getFile` links are temporary and must be regenerated close to playback.
-- Large videos consume edge execution time, memory, and bandwidth.
-- Large-response proxy behavior and HTTP Range support are not guaranteed by the observed Wasmer Node path.
-- Telegram stream URLs are not stable `<video src>` targets and may expire during long playback.
+To publish full-size movies, upload the video file to R2 or another supported object storage/CDN and set its catalog row to `media_source=r2` plus the object key. Keeping Telegram as the only upload trigger requires either a self-hosted Telegram Bot API server with a worker that moves local Telegram files into R2, or an upload/ingestion workflow that stores the file in R2 before publishing the Telegram catalog trigger.
 
-A production media upgrade should use a compliant origin that provides HTTPS, Range requests, large-file streaming, long execution/bandwidth capacity, and stable signed URLs. Telegram can remain the source of truth for chat/message/file references while the backend generates a short-lived playback handoff. Do not fake playback; the UI explicitly reports unsupported or missing sources rather than presenting a nonfunctional stream.
+Cloudflare setup:
+
+1. Create an R2 bucket.
+2. Create an Object Storage API token with write access for ingestion and read access for playback.
+3. Store the account ID, access key ID, secret access key, and bucket name as Wasmer secrets.
+4. Do not expose the R2 S3 endpoint or public bucket URL; the backend generates short-lived signed URLs server-side.
 
 ## Wasmer Deployment
 
