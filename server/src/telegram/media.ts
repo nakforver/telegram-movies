@@ -1,5 +1,5 @@
 
-import { telegramApiBase } from './base.js';
+import { telegramApiBase, telegramGatewayHeaders } from './base.js';
 
 export interface TelegramFile {
   file_id: string;
@@ -13,7 +13,7 @@ export function resolveTelegramFileUrl(fileId: string): Promise<{ url: string; s
   const apiBase = telegramApiBase();
   return fetch(`${apiBase}/bot${telegramBotToken}/getFile`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...telegramGatewayHeaders() },
     body: JSON.stringify({ file_id: fileId })
   })
     .then(async response => {

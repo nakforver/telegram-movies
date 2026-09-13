@@ -8,3 +8,8 @@ export function telegramApiBase(): string {
   }
   return configured.replace(/\/+$/, '');
 }
+
+export function telegramGatewayHeaders(): Record<string, string> {
+  const gatewayKey = (process.env.TELEGRAM_API_GATEWAY_KEY ?? '').trim();
+  return gatewayKey ? { 'x-gateway-key': gatewayKey } : {};
+}

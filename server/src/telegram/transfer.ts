@@ -1,5 +1,6 @@
 import type { MovieRecord } from '../types.js';
 import { uploadToR2 } from '../storage/r2.js';
+import { telegramGatewayHeaders } from './base.js';
 import { resolveTelegramFileUrl, TooLargeTelegramFileError } from './media.js';
 
 export const telegramBotApiDownloadLimitBytes = 20 * 1024 * 1024;
@@ -23,7 +24,7 @@ export async function transferTelegramMovieToR2(record: MovieRecord): Promise<Tr
     if ((resolved.size ?? 0) > telegramBotApiDownloadLimitBytes) {
       throw new TooLargeTelegramFileError('The Telegram video exceeds the 20 MB public Bot API download limit');
     }
-    const upstream = await fetch(resolved.url);
+    const upstream = await fetch(resolved.url, { headers: telegramGatewayHeaders() });
     if (!upstream.ok || !upstream.body) throw new Error(`Telegram download failed (${upstream.status})`);
     const objectKey = `movies/${record.movie_id}.mp4`;
     const contentLength = resolved.size ?? Number(upstream.headers.get('content-length') ?? Number.NaN);
