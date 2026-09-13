@@ -18,13 +18,11 @@ export async function transferTelegramMovieToR2(record: MovieRecord): Promise<Tr
     const next = unavailable(record, 'Telegram file reference is missing');
     return { record: next, transferred: false, reason: next.media_status_reason };
   }
-  if ((record.telegram_file_size ?? 0) > telegramBotApiDownloadLimitBytes) {
-    const next = unavailable(record, 'The Telegram video exceeds the 20 MB public Bot API download limit');
-    return { record: next, transferred: false, reason: next.media_status_reason };
-  }
-
   try {
     const resolved = await resolveTelegramFileUrl(record.telegram_file_id);
+    if ((resolved.size ?? 0) > telegramBotApiDownloadLimitBytes) {
+      throw new TooLargeTelegramFileError('The Telegram video exceeds the 20 MB public Bot API download limit');
+    }
     const upstream = await fetch(resolved.url);
     if (!upstream.ok || !upstream.body) throw new Error(`Telegram download failed (${upstream.status})`);
     const objectKey = `movies/${record.movie_id}.mp4`;

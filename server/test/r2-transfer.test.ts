@@ -43,6 +43,9 @@ describe('Telegram to R2 transfer', () => {
   });
 
   it('marks files above the Bot API limit unavailable without requesting them', async () => {
+    getFileMock.mockResolvedValue({ url: 'https://telegram.test/file', size: telegramBotApiDownloadLimitBytes + 1, expiresAt: new Date().toISOString() });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ start: controller => controller.close() }))));
+
     const result = await transferTelegramMovieToR2({
       ...baseRecord,
       telegram_file_size: telegramBotApiDownloadLimitBytes + 1
@@ -50,7 +53,7 @@ describe('Telegram to R2 transfer', () => {
     expect(result.transferred).toBe(false);
     expect(result.record.media_source).toBe('none');
     expect(result.record.media_status_reason).toContain('20 MB public Bot API download limit');
-    expect(getFileMock).not.toHaveBeenCalled();
+    expect(getFileMock).toHaveBeenCalled();
     expect(uploadMock).not.toHaveBeenCalled();
   });
 
