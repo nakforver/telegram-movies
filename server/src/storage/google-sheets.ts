@@ -42,7 +42,10 @@ export class GoogleSheetsStore implements CatalogStore {
     if (this.validateHeaders(header)) return;
     const isKnownPrefix = rawHeader.length < SHEET_FIELDS.length
       && rawHeader.every((field, index) => String(field ?? '').trim() === SHEET_FIELDS[index]);
-    if (rawHeader.length && !isKnownPrefix) throw new Error('Worksheet headers do not match the supported catalog schema');
+    if (rawHeader.length && !isKnownPrefix) {
+      const headerNames = rawHeader.map(field => String(field ?? '').trim()).filter(Boolean);
+      throw new Error(`Worksheet headers do not match the supported catalog schema. Found [${headerNames.join(', ')}]`);
+    }
     await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}?valueInputOption=RAW`, {
       values: [SHEET_FIELDS]
     });

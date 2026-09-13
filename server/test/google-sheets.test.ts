@@ -73,7 +73,7 @@ describe('GoogleSheetsStore', () => {
       [dataRange]: { values: [] }
     });
 
-    await expect(new GoogleSheetsStore('spreadsheet-id').list()).rejects.toThrow('Worksheet headers do not match the supported catalog schema');
+    await expect(new GoogleSheetsStore('spreadsheet-id').list()).rejects.toThrow('Found [movie_id, unexpected_header]');
   });
 
   it('updates an existing row matched by Telegram chat and message IDs instead of appending', async () => {
