@@ -89,9 +89,12 @@ export class GoogleSheetsStore implements CatalogStore {
     });
   }
 
-  async schemaDiagnostics(): Promise<{ alignedRows: number; misalignedRows: number; totalRows: number; rowShapes: string[] }> {
+  async schemaDiagnostics(): Promise<{ alignedRows: number; misalignedRows: number; totalRows: number; rowShapes: string[]; headerShape: string }> {
     await this.sheets();
     await this.sheetId();
+    const headerResponse = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}`);
+    const rawHeader = Array.isArray(headerResponse.values?.[0]) ? headerResponse.values[0] : [];
+    const headerShape = rawHeader.map(value => String(value ?? '').trim() === '' ? '-' : 'v').join('');
     const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
     const rows = (response.values ?? []) as unknown[][];
     let alignedRows = 0;
@@ -109,7 +112,7 @@ export class GoogleSheetsStore implements CatalogStore {
       if (Date.parse(text) > 0) return 'd';
       return 'v';
     }).join(''));
-    return { alignedRows, misalignedRows, totalRows: rows.length, rowShapes };
+    return { alignedRows, misalignedRows, totalRows: rows.length, rowShapes, headerShape };
   }
 
   private validateHeaders(header: unknown[] | undefined): boolean {
