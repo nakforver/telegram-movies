@@ -11,13 +11,13 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'cd .. && npm run dev --workspace server',
-      url: 'http://127.0.0.1:8080/api/health',
+      command: 'cd .. && PORT=18080 npm run dev --workspace server',
+      url: 'http://127.0.0.1:18080/api/health',
       reuseExistingServer: true,
       timeout: 30_000
     },
     {
-      command: 'cd .. && npm run dev --workspace frontend',
+      command: 'cd .. && BACKEND_PORT=18080 npm run dev --workspace frontend',
       url: 'http://127.0.0.1:5173',
       reuseExistingServer: true,
       timeout: 30_000
