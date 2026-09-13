@@ -6,6 +6,7 @@ import { MemoryStore } from '../storage/memory.js';
 import { GoogleSheetsStore } from '../storage/google-sheets.js';
 import { telegramUpdateToMovie, type TelegramUpdate } from '../telegram/ingestion.js';
 import { categories, episodes, findEpisode, normalizeQuery, publicMovie, queryCatalog, searchMovies, toPlaySource } from '../domain/catalog.js';
+import { signPlaybackToken } from './playback-tokens.js';
 import type { MovieRecord } from '../types.js';
 import { readJsonBody } from './body.js';
 import { failure, success } from './json.js';
@@ -74,7 +75,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (method === 'GET' && playMatch) {
       const source = toPlaySource(findEpisode(movies, decodeURIComponent(playMatch[1])));
       if (!source) throw new HttpError(404, 'Movie not found');
-      success(response, source);
+      success(response, source.url ? { ...source, url: `${source.url}?token=${signPlaybackToken(source.movieId)}` } : source);
       return true;
     }
     if (pathname.startsWith('/api/admin/')) {

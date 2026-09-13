@@ -109,8 +109,8 @@ export function toPlaySource(movie: Movie | undefined): PlaySource | null {
   if (movie.status !== 'published') {
     return { ...base(movie), source: 'none', playable: false, reason: 'Movie is not published' };
   }
-  if (!movie.telegram_chat_id || !movie.telegram_message_id) {
-    return { ...base(movie), source: 'none', playable: false, reason: 'Telegram chat/message reference is missing' };
+  if (!movie.telegram_chat_id || !movie.telegram_message_id || !movie.telegram_file_id) {
+    return { ...base(movie), source: 'none', playable: false, reason: 'Telegram chat, message, and file references are required' };
   }
   return {
     ...base(movie),

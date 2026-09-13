@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { findEpisode } from '../domain/catalog.js';
 import type { CatalogService } from '../storage/catalog-service.js';
-import { resolveTelegramFileUrl, isRangeValid } from '../telegram/media.js';
+import { resolveTelegramFileUrl, isRangeValid, TooLargeTelegramFileError } from '../telegram/media.js';
+import { verifyPlaybackToken } from './playback-tokens.js';
 import { HttpError } from './router.js';
 
 export async function handleMedia(request: IncomingMessage, response: ServerResponse, catalog: CatalogService, movieId: string): Promise<void> {
@@ -9,11 +10,16 @@ export async function handleMedia(request: IncomingMessage, response: ServerResp
   const movie = findEpisode(await catalog.list(), decodeURIComponent(movieId));
   if (!movie) throw new HttpError(404, 'Movie not found');
   if (!movie.telegram_file_id) throw new HttpError(404, 'Movie does not have a Telegram file');
+  const url = new URL(request.url ?? '/', 'http://localhost');
+  if (!verifyPlaybackToken(decodeURIComponent(movieId), url.searchParams.get('token') ?? undefined)) {
+    throw new HttpError(401, 'Playback authentication required');
+  }
 
   let resolved: Awaited<ReturnType<typeof resolveTelegramFileUrl>>;
   try {
     resolved = await resolveTelegramFileUrl(movie.telegram_file_id);
   } catch (error) {
+    if (error instanceof TooLargeTelegramFileError) throw new HttpError(413, error.message);
     throw new HttpError(502, error instanceof Error ? error.message : 'Telegram media request failed');
   }
   const rangeHeader = request.headers.range;

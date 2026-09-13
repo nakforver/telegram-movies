@@ -18,7 +18,11 @@ export function resolveTelegramFileUrl(fileId: string): Promise<{ url: string; s
     .then(async response => {
       const result = await response.json().catch(() => null) as { ok?: boolean; result?: TelegramFile; description?: string } | null;
       if (!response.ok || !result?.ok || !result.result?.file_path) {
-        throw new Error(result?.description ?? `Telegram getFile request failed (${response.status})`);
+        const description = result?.description ?? `Telegram getFile request failed (${response.status})`;
+        if (/file is too big/i.test(description)) {
+          throw new TooLargeTelegramFileError('Telegram Bot API only supports files up to 20 MB; larger movies require storage or CDN hosting');
+        }
+        throw new Error(description);
       }
       return {
         url: new URL(result.result.file_path, `${TELEGRAM_API}/file/bot${telegramBotToken}/`).href,
@@ -27,6 +31,8 @@ export function resolveTelegramFileUrl(fileId: string): Promise<{ url: string; s
       };
     });
 }
+
+export class TooLargeTelegramFileError extends Error {}
 
 export function isRangeValid(range: string | undefined, size: number): boolean {
   if (!range || !range.startsWith('bytes=')) return false;
