@@ -88,3 +88,24 @@ test('empty catalog renders a clear empty state and search results message', asy
   await expect(page).toHaveURL(/\/search(\?.*)?$/);
   await expect(page.getByText('No movies found.')).toBeVisible();
 });
+
+test('player shows a clear message instead of a black area when media is too large', async ({ page }) => {
+  const movieId = 'telegram--1004296358811-8';
+  await page.route('**/api/play/**', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { movieId, title: 'Telegram movie', type: 'movie', season: null, episode: null, source: 'telegram', url: `/api/media/${movieId}?token=signed-token`, playable: true } })
+    });
+  });
+  await page.route('**/api/media/**', async route => {
+    expect(route.request().url()).toBe(`http://127.0.0.1:5173/api/media/${movieId}?token=signed-token`);
+    await route.fulfill({ status: 413, body: 'Too large' });
+  });
+
+  await page.goto(`/player/${movieId}`);
+
+  await expect(page.getByText('This video is too large for the current Telegram playback gateway. The video source must be moved to supported object storage or CDN hosting before it can be played.')).toBeVisible();
+  await expect(page.locator('video.player')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '▶ Play' })).toHaveCount(0);
+});

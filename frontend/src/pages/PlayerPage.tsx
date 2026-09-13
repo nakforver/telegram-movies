@@ -9,9 +9,32 @@ export default function PlayerPage() {
   const [source, setSource] = useState<PlaySource>();
   const [error, setError] = useState('');
   const [status, setStatus] = useState('Loading player…');
+  const [mediaStatus, setMediaStatus] = useState<'checking' | 'ready' | 'error'>('checking');
   const [muted, setMuted] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  useEffect(() => { api.play(params.id).then(setSource).catch(setError); }, [params.id]);
+  useEffect(() => {
+    let cancelled = false;
+    api.play(params.id)
+      .then(async playableSource => {
+        if (!playableSource.url) return playableSource;
+        const response = await fetch(playableSource.url, { method: 'HEAD' });
+        if (response.status === 413) throw new Error('This video is too large for the current Telegram playback gateway. The video source must be moved to supported object storage or CDN hosting before it can be played.');
+        if (!response.ok) throw new Error('Video source is unavailable. Please try again.');
+        return playableSource;
+      })
+      .then(playableSource => {
+        if (cancelled) return;
+        setSource(playableSource);
+        setMediaStatus(playableSource.url ? 'ready' : 'error');
+        setStatus(playableSource.url ? 'Video source ready.' : 'This title cannot be played yet.');
+      })
+      .catch(mediaError => {
+        if (cancelled) return;
+        setError(mediaError instanceof Error ? mediaError.message : 'The player failed to load.');
+        setMediaStatus('error');
+      });
+    return () => { cancelled = true; };
+  }, [params.id]);
   function saveProgress(progress: number) {
     if (!source) return;
     history.save({ id: source.movieId, title: source.title, titleKm: source.titleKm, type: source.type }, progress);
@@ -19,6 +42,7 @@ export default function PlayerPage() {
   if (error) return <><h1 className="page-title">Player</h1><div className="error">{error}</div></>;
   if (!source) return <div className="loading">Loading player…</div>;
   if (!source.playable) return <><h1 className="page-title">{source.title}</h1><div className="status">This title cannot be played yet. {source.reason ?? 'The catalog administrator must attach a valid Telegram chat and message reference.'}</div></>;
+  if (mediaStatus !== 'ready') return <><h1 className="page-title">{source.title}</h1><div className="player-status">{status}</div></>;
   return (
     <>
       <h1 className="page-title">{source.title}</h1>
@@ -26,7 +50,11 @@ export default function PlayerPage() {
         className="player" controls playsInline preload="metadata" muted={muted}
         ref={videoRef}
         src={source.url}
-        onError={() => setStatus('Video source unavailable.')}
+        onError={() => {
+          setMediaStatus('error');
+          setStatus('Video source unavailable. This title may be too large for the Telegram playback gateway or the source may have expired.');
+        }}
+        onLoadedMetadata={() => setStatus('Video loaded.')}
         onWaiting={() => setStatus('Buffering…')} onPlaying={() => setStatus('Playing')} onPause={() => setStatus('Paused')}
         onTimeUpdate={event => saveProgress(Math.min(100, (event.currentTarget.currentTime / (event.currentTarget.duration || 1)) * 100))}
       >
