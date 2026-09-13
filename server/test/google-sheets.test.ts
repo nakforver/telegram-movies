@@ -85,7 +85,8 @@ describe('GoogleSheetsStore', () => {
       '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
       [headerRange]: { values: [LEGACY_SHEET_FIELD_SETS[1]] },
       [dataRange]: { values: [legacyRow] },
-      ':batchUpdate': {}
+      ':batchUpdate': {},
+      'A2:AA?valueInputOption=RAW': {}
     });
 
     const rows = await new GoogleSheetsStore('spreadsheet-id').list();

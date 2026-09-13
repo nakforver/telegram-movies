@@ -54,6 +54,7 @@ export class GoogleSheetsStore implements CatalogStore {
     const hasExistingRows = legacyWithoutFileSize ? await this.hasExistingRows() : false;
     if (legacyWithoutFileSize && hasExistingRows) {
       await this.insertTelegramFileSizeColumn();
+      await this.fillMissingRowColumns();
     }
     await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}?valueInputOption=RAW`, {
       values: [SHEET_FIELDS]
@@ -71,6 +72,18 @@ export class GoogleSheetsStore implements CatalogStore {
     await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A1:${columnLetter(SHEET_FIELDS.length)}1`))}?valueInputOption=RAW`, {
       values: [SHEET_FIELDS]
     });
+  }
+
+  private async fillMissingRowColumns(): Promise<void> {
+    const response = await this.request('GET', `/values/${encodeURIComponent(await this.range('A2:AA1000'))}`);
+    const rows = (response.values ?? []) as unknown[][];
+    if (!rows.length) return;
+    const values = rows.map(row => {
+      const next = Array.from({ length: SHEET_FIELDS.length }, (_, index) => String(row[index] ?? ''));
+      next[19] = next[19] || '';
+      return next;
+    });
+    await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}`))}?valueInputOption=RAW`, { values });
   }
 
   private async hasExistingRows(): Promise<boolean> {
