@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SHEET_FIELDS } from '../src/storage/schema.js';
+import { LEGACY_SHEET_FIELD_SETS, SHEET_FIELDS } from '../src/storage/schema.js';
 
 process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = 'test@example.iam.gserviceaccount.com';
 process.env.GOOGLE_PRIVATE_KEY = 'test-key';
@@ -57,6 +57,19 @@ describe('GoogleSheetsStore', () => {
     const request = mockSheetsRequest({
       '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
       [headerRange]: { values: [SHEET_FIELDS.slice(0, 22)] },
+      [dataRange]: { values: [] }
+    });
+
+    const rows = await new GoogleSheetsStore('spreadsheet-id').list();
+
+    expect(rows).toEqual([]);
+    expect(request).toHaveBeenCalledWith('PUT', `/values/${encodeURIComponent(`Movies!A1:${columnLetter(SHEET_FIELDS.length)}1`)}?valueInputOption=RAW`, { values: [SHEET_FIELDS] });
+  });
+
+  it('migrates the original Telegram catalog header without file size to the full schema', async () => {
+    const request = mockSheetsRequest({
+      '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
+      [headerRange]: { values: [LEGACY_SHEET_FIELD_SETS[0]] },
       [dataRange]: { values: [] }
     });
 

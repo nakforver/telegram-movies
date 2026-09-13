@@ -2,7 +2,7 @@ import * as crypto from 'node:crypto';
 import { googlePrivateKey, googleServiceAccountEmail, googleSpreadsheetId } from '../config.js';
 import type { CatalogStore } from '../domain/catalog.js';
 import type { MovieRecord } from '../types.js';
-import { SHEET_FIELDS } from './schema.js';
+import { LEGACY_SHEET_FIELD_SETS, SHEET_FIELDS } from './schema.js';
 
 export class GoogleSheetsStore implements CatalogStore {
   private accessToken: string | null = null;
@@ -40,8 +40,10 @@ export class GoogleSheetsStore implements CatalogStore {
     const rawHeader = Array.isArray(response.values?.[0]) ? response.values[0] : [];
     const header = rawHeader.filter(value => String(value ?? '').trim() !== '');
     if (this.validateHeaders(header)) return;
-    const isKnownPrefix = rawHeader.length <= SHEET_FIELDS.length
-      && rawHeader.every((field, index) => String(field ?? '').trim() === SHEET_FIELDS[index]);
+    const isKnownPrefix = rawHeader.length <= SHEET_FIELDS.length && LEGACY_SHEET_FIELD_SETS.some(fields => (
+      rawHeader.length === fields.length
+      && rawHeader.every((field, index) => String(field ?? '').trim() === fields[index])
+    ));
     if (rawHeader.length && !isKnownPrefix) {
       const headerNames = rawHeader.map(field => String(field ?? '').trim()).filter(Boolean);
       throw new Error(`Worksheet headers do not match the supported catalog schema. Found [${headerNames.join(', ')}]`);
