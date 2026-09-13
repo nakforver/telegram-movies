@@ -63,7 +63,7 @@ export class GoogleSheetsStore implements CatalogStore {
     const now = new Date().toISOString();
     const next = { ...record, updated_at: now, created_at: record.created_at ?? now };
     if (rowIndex < 0) {
-      await this.request('POST', `/values/${encodeURIComponent(await this.range('A2'))}/append?valueInputOption=USER_ENTERED`, { values: [this.row(next)] });
+      await this.request('POST', `/values/${encodeURIComponent(await this.range('A2'))}:append?valueInputOption=USER_ENTERED`, { values: [this.row(next)] });
     } else {
       await this.request('PUT', `/values/${encodeURIComponent(await this.range(`A${rowIndex + 2}:${columnLetter(SHEET_FIELDS.length)}${rowIndex + 2}`))}?valueInputOption=USER_ENTERED`, { values: [this.row(next)] });
     }
