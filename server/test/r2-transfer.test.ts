@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { transferTelegramMovieToR2, telegramBotApiDownloadLimitBytes } from '../src/telegram/transfer.js';
 import * as r2Module from '../src/storage/r2.js';
 import * as telegramMediaModule from '../src/telegram/media.js';
 import type { MovieRecord } from '../src/types.js';
 
 process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+delete process.env.TELEGRAM_API_BASE;
 process.env.R2_ACCOUNT_ID = 'test-account';
 process.env.R2_ACCESS_KEY_ID = 'test-access-key';
 process.env.R2_SECRET_ACCESS_KEY = 'test-secret-key';
@@ -27,6 +28,11 @@ describe('Telegram to R2 transfer', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete process.env.TELEGRAM_API_BASE;
+  });
+
+  afterAll(() => {
+    delete process.env.TELEGRAM_API_BASE;
   });
 
   it('streams a supported Telegram file into R2 and marks it playable', async () => {
@@ -55,6 +61,20 @@ describe('Telegram to R2 transfer', () => {
     expect(result.record.media_status_reason).toContain('20 MB public Bot API download limit');
     expect(getFileMock).toHaveBeenCalled();
     expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it('streams files above the public limit through the self-hosted API', async () => {
+    process.env.TELEGRAM_API_BASE = 'https://telegram-bot-api.example.com';
+    const largeSize = telegramBotApiDownloadLimitBytes + 1;
+    const stream = new ReadableStream<Uint8Array>({ start: controller => controller.close() });
+    getFileMock.mockResolvedValue({ url: 'https://telegram.test/file', size: largeSize, expiresAt: new Date().toISOString() });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(stream, { headers: { 'content-type': 'video/mp4', 'content-length': String(largeSize) } })));
+    uploadMock.mockResolvedValue({ objectKey: 'movies/movie-1.mp4' });
+
+    const result = await transferTelegramMovieToR2({ ...baseRecord, telegram_file_size: largeSize });
+
+    expect(result.transferred).toBe(true);
+    expect(uploadMock).toHaveBeenCalledWith('movies/movie-1.mp4', expect.any(ReadableStream), 'video/mp4', largeSize);
   });
 
   it('marks the record unavailable when the transfer fails', async () => {

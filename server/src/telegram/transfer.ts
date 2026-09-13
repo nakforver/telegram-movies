@@ -21,7 +21,8 @@ export async function transferTelegramMovieToR2(record: MovieRecord): Promise<Tr
   }
   try {
     const resolved = await resolveTelegramFileUrl(record.telegram_file_id);
-    if ((resolved.size ?? 0) > telegramBotApiDownloadLimitBytes) {
+    const selfHostedApi = Boolean((process.env.TELEGRAM_API_BASE ?? '').trim());
+    if (!selfHostedApi && (resolved.size ?? 0) > telegramBotApiDownloadLimitBytes) {
       throw new TooLargeTelegramFileError('The Telegram video exceeds the 20 MB public Bot API download limit');
     }
     const upstream = await fetch(resolved.url, { headers: telegramGatewayHeaders() });
