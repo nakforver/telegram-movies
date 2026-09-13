@@ -32,14 +32,14 @@ describe('Telegram to R2 transfer', () => {
   it('streams a supported Telegram file into R2 and marks it playable', async () => {
     const stream = new ReadableStream<Uint8Array>({ start: controller => controller.close() });
     getFileMock.mockResolvedValue({ url: 'https://telegram.test/file', size: 5, expiresAt: new Date().toISOString() });
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(stream, { headers: { 'content-type': 'video/mp4' } })));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(stream, { headers: { 'content-type': 'video/mp4', 'content-length': '0' } })));
     uploadMock.mockResolvedValue({ objectKey: 'movies/movie-1.mp4' });
 
     const result = await transferTelegramMovieToR2(baseRecord);
 
     expect(result.transferred).toBe(true);
     expect(result.record).toMatchObject({ media_source: 'r2', media_object_key: 'movies/movie-1.mp4' });
-    expect(uploadMock).toHaveBeenCalledWith('movies/movie-1.mp4', expect.any(ReadableStream), 'video/mp4');
+    expect(uploadMock).toHaveBeenCalledWith('movies/movie-1.mp4', expect.any(ReadableStream), 'video/mp4', 5);
   });
 
   it('marks files above the Bot API limit unavailable without requesting them', async () => {

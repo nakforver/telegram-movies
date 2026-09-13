@@ -29,8 +29,8 @@ function hmac(value: string, key: Buffer | string): Buffer {
   return createHmac('sha256', key).update(value).digest();
 }
 
-function credentials(secretAccessKey: string, date: string): string {
-  return hmac(date, `AWS4${secretAccessKey}`).toString('hex');
+function credentials(secretAccessKey: string, date: string): Buffer {
+  return hmac(date, `AWS4${secretAccessKey}`);
 }
 
 function authorization(
@@ -63,8 +63,8 @@ function authorization(
   return `AWS4-HMAC-SHA256 Credential=${configuration.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 }
 
-function canonicalUri(objectKey: string): string {
-  return `/${objectKey.split('/').map(encodeURIComponent).join('/')}`;
+function canonicalUri(configuration: R2Configuration, objectKey: string): string {
+  return `/${configuration.bucket}/${objectKey.split('/').map(encodeURIComponent).join('/')}`;
 }
 
 async function readError(response: Response, action: string): Promise<Error> {
@@ -76,25 +76,31 @@ async function readError(response: Response, action: string): Promise<Error> {
 export async function uploadToR2(
   objectKey: string,
   body: ReadableStream<Uint8Array>,
-  contentType = 'video/mp4'
+  contentType = 'video/mp4',
+  contentLength?: number
 ): Promise<{ objectKey: string }> {
   const configuration = r2Configuration();
   if (!configuration) throw new Error('Cloudflare R2 is not configured');
+  if (contentLength === undefined || !Number.isFinite(contentLength) || contentLength < 0) {
+    throw new Error('R2 upload requires a known content length');
+  }
   const date = new Date();
   const host = `${configuration.accountId}.r2.cloudflarestorage.com`;
   const headers: Record<string, string> = {
     host,
     'x-amz-content-sha256': unsignedPayload,
     'x-amz-date': date.toISOString().replace(/[:-]|\.\d{3}/g, ''),
-    'content-type': contentType
+    'content-type': contentType,
+    'content-length': String(contentLength)
   };
   const query = new URLSearchParams();
-  headers.authorization = authorization(configuration, 'PUT', canonicalUri(objectKey), query, headers, date);
+  headers.authorization = authorization(configuration, 'PUT', canonicalUri(configuration, objectKey), query, headers, date);
   const response = await fetch(endpoint(configuration, objectKey), {
     method: 'PUT',
     headers,
-    body: body as ReadableStream
-  } as RequestInit);
+    body,
+    duplex: 'half'
+  } as RequestInit & { duplex: 'half' });
   if (!response.ok) throw await readError(response, 'R2 upload');
   await response.body?.cancel().catch(() => undefined);
   return { objectKey };
@@ -118,7 +124,7 @@ export function signedR2Url(objectKey: string, expiresAt = Date.now() + 5 * 60 *
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
   const canonicalRequest = [
     'GET',
-    canonicalUri(objectKey),
+    canonicalUri(configuration, objectKey),
     canonicalQuery,
     `host:${host}\n`,
     'host',

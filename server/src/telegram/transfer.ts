@@ -26,7 +26,8 @@ export async function transferTelegramMovieToR2(record: MovieRecord): Promise<Tr
     const upstream = await fetch(resolved.url);
     if (!upstream.ok || !upstream.body) throw new Error(`Telegram download failed (${upstream.status})`);
     const objectKey = `movies/${record.movie_id}.mp4`;
-    await uploadToR2(objectKey, upstream.body, upstream.headers.get('content-type') ?? 'video/mp4');
+    const contentLength = resolved.size ?? Number(upstream.headers.get('content-length') ?? Number.NaN);
+    await uploadToR2(objectKey, upstream.body, upstream.headers.get('content-type') ?? 'video/mp4', contentLength);
     const next: MovieRecord = {
       ...record,
       media_source: 'r2',
