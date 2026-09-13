@@ -133,6 +133,7 @@ All responses use the same envelope. Successful responses use `{ "success": true
 - `GET /api/episodes/:movieId`
 - `GET /api/play/:id`
 - `POST /api/admin/movies`
+- `POST /api/admin/movies/:movieId/transfer` – retries Telegram-to-R2 transfer for an existing catalog record
 - `PUT /api/admin/movies/:id`
 - `DELETE /api/admin/movies/:id`
 - `POST /api/admin/import-telegram`

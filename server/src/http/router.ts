@@ -103,6 +103,24 @@ async function handleAdmin(request: IncomingMessage, response: ServerResponse, c
     success(response, await store.schemaDiagnostics());
     return true;
   }
+  const transferMatch = pathname.match(/^\/api\/admin\/movies\/([^/]+)\/transfer$/);
+  if (transferMatch && request.method === 'POST') {
+    const movieId = decodeURIComponent(transferMatch[1]);
+    const movies = await catalog.list(true);
+    const movie = movies.find(item => item.movie_id === movieId);
+    if (!movie) throw new HttpError(404, 'Movie not found');
+    if (!movie.telegram_file_id) throw new HttpError(409, 'Telegram file reference is missing');
+    const transfer = await transferTelegramMovieToR2(movie);
+    const saved = await catalog.upsert(transfer.record);
+    success(response, {
+      movieId,
+      transferred: transfer.transferred,
+      reason: transfer.reason,
+      mediaSource: saved.media_source,
+      mediaObjectKey: saved.media_object_key
+    });
+    return true;
+  }
   const movieMatch = pathname.match(/^\/api\/admin\/movies\/([^/]+)$/);
   if (movieMatch && request.method === 'PUT') {
     const record = await readJsonBody(request) as unknown as MovieRecord;
