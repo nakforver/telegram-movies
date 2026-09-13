@@ -17,12 +17,12 @@ const server = createServer(async (request: IncomingMessage, response: ServerRes
   try {
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
     const pathname = decodeURIComponent(url.pathname);
-    if (await handleApi(request, response, catalog, pathname, url.searchParams)) return;
     const mediaMatch = pathname.match(/^\/api\/media\/([^/]+)$/);
     if (mediaMatch) {
       await handleMedia(request, response, catalog, decodeURIComponent(mediaMatch[1]));
       return;
     }
+    if (await handleApi(request, response, catalog, pathname, url.searchParams)) return;
     await serveStatic(pathname, response);
   } catch (error) {
     console.error(error);
