@@ -40,7 +40,7 @@ export class GoogleSheetsStore implements CatalogStore {
     const rawHeader = Array.isArray(response.values?.[0]) ? response.values[0] : [];
     const header = rawHeader.filter(value => String(value ?? '').trim() !== '');
     if (this.validateHeaders(header)) return;
-    const isKnownPrefix = rawHeader.length < SHEET_FIELDS.length
+    const isKnownPrefix = rawHeader.length <= SHEET_FIELDS.length
       && rawHeader.every((field, index) => String(field ?? '').trim() === SHEET_FIELDS[index]);
     if (rawHeader.length && !isKnownPrefix) {
       const headerNames = rawHeader.map(field => String(field ?? '').trim()).filter(Boolean);
