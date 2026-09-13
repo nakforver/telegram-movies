@@ -64,18 +64,28 @@ export class GoogleSheetsStore implements CatalogStore {
     const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
     const rows = response.values ?? [];
     const needsRepair = (rows as unknown[][]).some(row => {
+      const fileSize = String(row[19] ?? '').trim();
       const status = String(row[20] ?? '').trim();
       const createdAt = String(row[21] ?? '').trim();
       const updatedAt = String(row[22] ?? '').trim();
-      const legacyStatus = String(row[19] ?? '').trim();
-      const legacyCreatedAt = String(row[20] ?? '').trim();
-      const legacyUpdatedAt = String(row[21] ?? '').trim();
-      const validStatus = status === 'published' || status === 'draft';
-      const aligned = validStatus && Date.parse(createdAt) > 0 && Date.parse(updatedAt) > 0;
-      const misaligned = (legacyStatus === 'published' || legacyStatus === 'draft')
-        && Date.parse(legacyCreatedAt) > 0
-        && Date.parse(legacyUpdatedAt) > 0
-        && !Date.parse(String(row[22] ?? '').trim());
+      const mediaUrl = String(row[23] ?? '').trim();
+      const mediaObjectKey = String(row[24] ?? '').trim();
+      const mediaReason = String(row[25] ?? '').trim();
+      const aligned = Number.isFinite(Number(fileSize))
+        && (status === 'published' || status === 'draft')
+        && Date.parse(createdAt) > 0
+        && Date.parse(updatedAt) > 0
+        && mediaUrl === ''
+        && mediaObjectKey === ''
+        && mediaReason === '';
+      const misaligned = Number(fileSize) === 0
+        && status === 'published'
+        && createdAt === ''
+        && updatedAt === ''
+        && mediaUrl === 'published'
+        && Date.parse(mediaObjectKey) > 0
+        && Date.parse(mediaReason) > 0
+        && String(row[26] ?? '').trim() === '';
       return !aligned && misaligned;
     });
     if (!needsRepair) return;
