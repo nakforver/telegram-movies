@@ -2,8 +2,8 @@ import { createServer, type IncomingMessage, ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 import { port, isProduction } from './config.js';
-import { createCatalog, handleApi } from './http/router.js';
 import { handleMedia } from './http/media.js';
+import { createCatalog, handleApi, HttpError } from './http/router.js';
 
 const catalog = createCatalog();
 const frontendRoot = resolve(process.cwd(), 'frontend', 'dist');
@@ -25,11 +25,22 @@ const server = createServer(async (request: IncomingMessage, response: ServerRes
     if (await handleApi(request, response, catalog, pathname, url.searchParams)) return;
     await serveStatic(pathname, response);
   } catch (error) {
+    if (error instanceof HttpError && !response.headersSent) {
+      response.writeHead(error.status, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ success: false, error: error.message }));
+      return;
+    }
     console.error(error);
     response.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
     response.end(JSON.stringify({ success: false, error: 'Unexpected server error' }));
   }
 });
+
+export function startServer(): void {
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`Telegram Movies listening on http://0.0.0.0:${port} (${isProduction ? 'production' : 'development'})`);
+  });
+}
 
 async function serveStatic(pathname: string, response: ServerResponse): Promise<void> {
   const safePath = normalize(pathname).replace(/^(\.\.[/\\])+/, '');
@@ -46,8 +57,5 @@ async function serveStatic(pathname: string, response: ServerResponse): Promise<
   }
 }
 
-server.listen(port, '0.0.0.0', () => {
-  console.log(`Telegram Movies listening on http://0.0.0.0:${port} (${isProduction ? 'production' : 'development'})`);
-});
-
 export { server };
+if (process.env.VITEST === undefined) startServer();
