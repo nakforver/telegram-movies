@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-package_version="${1:-1.0.$(date +%s)}"
+package_version="${1:-4.0.$(date +%s)}"
 namespace="wechatfree011"
 package_name="telegram-movies"
 generated_manifest="deploy/.deploy-generated.wasmer.toml"
