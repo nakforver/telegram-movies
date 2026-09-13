@@ -221,21 +221,17 @@ function isAlignedRow(row: unknown[]): boolean {
 }
 
 function isShiftedRow(row: unknown[]): boolean {
-  const fileSize = String(row[19] ?? '').trim();
-  const status = String(row[20] ?? '').trim();
-  const createdAt = String(row[21] ?? '').trim();
-  const updatedAt = String(row[22] ?? '').trim();
-  const mediaUrl = String(row[23] ?? '').trim();
-  const mediaObjectKey = String(row[24] ?? '').trim();
-  const mediaReason = String(row[25] ?? '').trim();
-  return Number(fileSize) === 0
-    && status === 'published'
-    && createdAt === ''
-    && updatedAt === ''
-    && mediaUrl === 'published'
-    && Date.parse(mediaObjectKey) > 0
-    && Date.parse(mediaReason) > 0
-    && String(row[26] ?? '').trim() === '';
+  const status = String(row[24] ?? '').trim();
+  const createdAt = String(row[25] ?? '').trim();
+  const updatedAt = String(row[26] ?? '').trim();
+  return (status === 'published' || status === 'draft')
+    && Date.parse(createdAt) > 0
+    && Date.parse(updatedAt) > 0
+    && String(row[19] ?? '').trim() === ''
+    && String(row[20] ?? '').trim() === ''
+    && String(row[21] ?? '').trim() === ''
+    && String(row[22] ?? '').trim() === ''
+    && String(row[23] ?? '').trim() === '';
 }
 
 export function columnLetter(number: number): string {

@@ -96,7 +96,7 @@ describe('GoogleSheetsStore', () => {
   });
 
   it('repares rows misaligned by an earlier header-only migration', async () => {
-    const misalignedRow = ['telegram--100123-8', 'Movies Korea', '', '', '', '', '', '', '', '', '', '', '', 'movie', '', '', '-100123', '8', 'file-id', 0, 'published', '', '', 'published', '2026-09-13T00:00:00Z', '2026-09-13T00:00:00Z', ''];
+    const misalignedRow = ['telegram--100123-8', 'Movies Korea', '', '', '', '', '', '', '', '', '', '', '', 'movie', '', '', '-100123', '8', 'file-id', '', '', '', '', '', 'published', '2026-09-13T00:00:00Z', '2026-09-13T00:00:00Z'];
     const request = mockSheetsRequest({
       '?fields=sheets.properties': { sheets: [{ properties: { title: 'Movies', sheetId: 0 } }] },
       [headerRange]: { values: [SHEET_FIELDS] },
