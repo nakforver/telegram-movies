@@ -8,6 +8,9 @@ export class CatalogService {
   constructor(private store: CatalogStore, cacheTtlMs = 300_000) {
     this.cache = new Cache<Movie[]>(cacheTtlMs);
   }
+  get backingStore(): CatalogStore {
+    return this.store;
+  }
   async list(force = false): Promise<Movie[]> {
     if (!force) {
       const cached = this.cache.get();

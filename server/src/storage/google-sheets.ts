@@ -64,29 +64,7 @@ export class GoogleSheetsStore implements CatalogStore {
     const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
     const rows = response.values ?? [];
     const needsRepair = (rows as unknown[][]).some(row => {
-      const fileSize = String(row[19] ?? '').trim();
-      const status = String(row[20] ?? '').trim();
-      const createdAt = String(row[21] ?? '').trim();
-      const updatedAt = String(row[22] ?? '').trim();
-      const mediaUrl = String(row[23] ?? '').trim();
-      const mediaObjectKey = String(row[24] ?? '').trim();
-      const mediaReason = String(row[25] ?? '').trim();
-      const aligned = Number.isFinite(Number(fileSize))
-        && (status === 'published' || status === 'draft')
-        && Date.parse(createdAt) > 0
-        && Date.parse(updatedAt) > 0
-        && mediaUrl === ''
-        && mediaObjectKey === ''
-        && mediaReason === '';
-      const misaligned = Number(fileSize) === 0
-        && status === 'published'
-        && createdAt === ''
-        && updatedAt === ''
-        && mediaUrl === 'published'
-        && Date.parse(mediaObjectKey) > 0
-        && Date.parse(mediaReason) > 0
-        && String(row[26] ?? '').trim() === '';
-      return !aligned && misaligned;
+      return !isAlignedRow(row) && isShiftedRow(row);
     });
     if (!needsRepair) return;
     await this.insertTelegramFileSizeColumn();
@@ -109,6 +87,21 @@ export class GoogleSheetsStore implements CatalogStore {
         }
       }]
     });
+  }
+
+  async schemaDiagnostics(): Promise<{ alignedRows: number; misalignedRows: number; totalRows: number }> {
+    await this.sheets();
+    await this.sheetId();
+    const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
+    const rows = (response.values ?? []) as unknown[][];
+    let alignedRows = 0;
+    let misalignedRows = 0;
+    for (const row of rows) {
+      if (!Array.isArray(row) || !row.some(value => String(value ?? '').trim() !== '')) continue;
+      if (isAlignedRow(row)) alignedRows += 1;
+      else if (isShiftedRow(row)) misalignedRows += 1;
+    }
+    return { alignedRows, misalignedRows, totalRows: rows.length };
   }
 
   private validateHeaders(header: unknown[] | undefined): boolean {
@@ -206,6 +199,35 @@ export function rowToObject(row: unknown[]): MovieRecord | null {
   SHEET_FIELDS.forEach((field, index) => { record[field] = source[index]; });
   if (!record.movie_id || !record.title) return null;
   return record as unknown as MovieRecord;
+}
+
+function isAlignedRow(row: unknown[]): boolean {
+  const fileSize = String(row[19] ?? '').trim();
+  const status = String(row[20] ?? '').trim();
+  const createdAt = String(row[21] ?? '').trim();
+  const updatedAt = String(row[22] ?? '').trim();
+  return Number.isFinite(Number(fileSize))
+    && (status === 'published' || status === 'draft')
+    && Date.parse(createdAt) > 0
+    && Date.parse(updatedAt) > 0;
+}
+
+function isShiftedRow(row: unknown[]): boolean {
+  const fileSize = String(row[19] ?? '').trim();
+  const status = String(row[20] ?? '').trim();
+  const createdAt = String(row[21] ?? '').trim();
+  const updatedAt = String(row[22] ?? '').trim();
+  const mediaUrl = String(row[23] ?? '').trim();
+  const mediaObjectKey = String(row[24] ?? '').trim();
+  const mediaReason = String(row[25] ?? '').trim();
+  return Number(fileSize) === 0
+    && status === 'published'
+    && createdAt === ''
+    && updatedAt === ''
+    && mediaUrl === 'published'
+    && Date.parse(mediaObjectKey) > 0
+    && Date.parse(mediaReason) > 0
+    && String(row[26] ?? '').trim() === '';
 }
 
 export function columnLetter(number: number): string {

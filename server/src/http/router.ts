@@ -97,6 +97,12 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
 async function handleAdmin(request: IncomingMessage, response: ServerResponse, catalog: CatalogService, pathname: string): Promise<boolean> {
   if (!isAdmin(request)) throw new HttpError(401, 'Admin authentication required');
+  if (pathname === '/api/admin/schema-diagnostics' && request.method === 'GET') {
+    const store = catalog.backingStore;
+    if (!(store instanceof GoogleSheetsStore)) throw new HttpError(409, 'Schema diagnostics require the Google Sheets catalog');
+    success(response, await store.schemaDiagnostics());
+    return true;
+  }
   const movieMatch = pathname.match(/^\/api\/admin\/movies\/([^/]+)$/);
   if (movieMatch && request.method === 'PUT') {
     const record = await readJsonBody(request) as unknown as MovieRecord;
