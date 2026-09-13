@@ -34,7 +34,11 @@ describe('movie API', () => {
   it('searches catalog fields', async () => { expect((await json('/api/search?q=action')).data.total).toBe(1); });
   it('returns movie details and episodes', async () => { expect((await json('/api/movies/series-1')).data.episodes).toHaveLength(1); });
   it('rejects invalid IDs', async () => { expect((await json('/api/movies/missing')).success).toBe(false); });
-  it('does not claim Telegram metadata is browser-playable', async () => { expect((await json('/api/play/series-1-s1-e1')).data.playable).toBe(false); });
+  it('provides a backend media URL for playable Telegram metadata', async () => {
+    const result = (await json('/api/play/series-1-s1-e1')).data;
+    expect(result.playable).toBe(true);
+    expect(result.url).toBe('/api/media/series-1-s1-e1');
+  });
   it('rejects missing Telegram references', async () => { expect((await json('/api/play/series-1')).data.playable).toBe(false); });
   it('protects admin endpoints', async () => { expect((await json('/api/admin/movies', { method: 'POST' })).success).toBe(false); });
 });

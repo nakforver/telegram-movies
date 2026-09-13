@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 import { port, isProduction } from './config.js';
 import { createCatalog, handleApi } from './http/router.js';
+import { handleMedia } from './http/media.js';
 
 const catalog = createCatalog();
 const frontendRoot = resolve(process.cwd(), 'frontend', 'dist');
@@ -17,6 +18,11 @@ const server = createServer(async (request: IncomingMessage, response: ServerRes
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
     const pathname = decodeURIComponent(url.pathname);
     if (await handleApi(request, response, catalog, pathname, url.searchParams)) return;
+    const mediaMatch = pathname.match(/^\/api\/media\/([^/]+)$/);
+    if (mediaMatch) {
+      await handleMedia(request, response, catalog, decodeURIComponent(mediaMatch[1]));
+      return;
+    }
     await serveStatic(pathname, response);
   } catch (error) {
     console.error(error);

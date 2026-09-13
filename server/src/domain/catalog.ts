@@ -117,9 +117,9 @@ export function toPlaySource(movie: Movie | undefined): PlaySource | null {
     telegramChatId: movie.telegram_chat_id,
     telegramMessageId: movie.telegram_message_id,
     telegramFileId: movie.telegram_file_id || undefined,
-    source: 'none',
-    playable: false,
-    reason: 'Playback requires a configured media origin; Telegram metadata alone cannot be played by the browser'
+    source: 'telegram',
+    url: `/api/media/${encodeURIComponent(movie.movie_id)}`,
+    playable: true
   };
 }
 

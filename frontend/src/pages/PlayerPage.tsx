@@ -25,6 +25,7 @@ export default function PlayerPage() {
       <video
         className="player" controls playsInline preload="metadata" muted={muted}
         ref={videoRef}
+        src={source.url}
         onError={() => setStatus('Video source unavailable.')}
         onWaiting={() => setStatus('Buffering…')} onPlaying={() => setStatus('Playing')} onPause={() => setStatus('Paused')}
         onTimeUpdate={event => saveProgress(Math.min(100, (event.currentTarget.currentTime / (event.currentTarget.duration || 1)) * 100))}
@@ -37,7 +38,7 @@ export default function PlayerPage() {
         <button onClick={() => { setMuted(!muted); videoRef.current!.muted = !muted; }}>{muted ? '🔇 Unmute' : '🔊 Mute'}</button>
         <button onClick={() => { const element = videoRef.current; if (element?.requestFullscreen) void element.requestFullscreen(); }}>⛶ Fullscreen</button>
       </div>
-      <div className="status">{status}<br />Playback metadata: Telegram chat {source.telegramChatId}, message {source.telegramMessageId}.</div>
+      <div className="status">{status}</div>
     </>
   );
 }
