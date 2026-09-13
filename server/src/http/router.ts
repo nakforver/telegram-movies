@@ -4,6 +4,7 @@ import { sendMessage } from '../telegram/api.js';
 import { CatalogService } from '../storage/catalog-service.js';
 import { MemoryStore } from '../storage/memory.js';
 import { GoogleSheetsStore } from '../storage/google-sheets.js';
+import { telegramUpdateToMovie, type TelegramUpdate } from '../telegram/ingestion.js';
 import { categories, episodes, findEpisode, normalizeQuery, publicMovie, queryCatalog, searchMovies, toPlaySource } from '../domain/catalog.js';
 import type { MovieRecord } from '../types.js';
 import { readJsonBody } from './body.js';
@@ -21,7 +22,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       if (!telegramWebhookSecret || request.headers['x-telegram-bot-api-secret-token'] !== telegramWebhookSecret) {
         throw new HttpError(401, 'Telegram webhook authentication required');
       }
-      const update = await readJsonBody(request) as { message?: { chat?: { id?: number }, text?: string } };
+      const update = await readJsonBody(request) as TelegramUpdate;
       const chatId = String(update.message?.chat?.id ?? '');
       const command = update.message?.text?.split(/\s+/)[0] ?? '';
       if (chatId && miniAppUrl) {
@@ -30,6 +31,8 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         else if (command === '/search') await sendMessage(chatId, 'Open Search to find English, Khmer, original, year, and genre titles.', miniAppUrl);
         else if (command === '/help') await sendMessage(chatId, 'Commands: /start, /movies, /search, /help.', miniAppUrl);
       }
+      const ingestedMovie = telegramUpdateToMovie(update);
+      if (ingestedMovie) await catalog.upsert(ingestedMovie);
       success(response, { handled: true });
       return true;
     }

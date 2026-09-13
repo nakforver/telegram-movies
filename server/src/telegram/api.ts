@@ -19,7 +19,7 @@ export function setMiniAppButton(text = '🎬 Open Movie App') {
 }
 
 export function setWebhook(url: string, secretToken: string) {
-  return call('setWebhook', { url, secret_token: secretToken, allowed_updates: ['message'] });
+  return call('setWebhook', { url, secret_token: secretToken, allowed_updates: ['message', 'channel_post'] });
 }
 
 export function setMyCommands() {

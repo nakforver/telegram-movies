@@ -49,9 +49,17 @@ export class GoogleSheetsStore implements CatalogStore {
 
   async upsert(record: MovieRecord): Promise<MovieRecord> {
     await this.sheets();
-    const values = await this.request('GET', `/values/${encodeURIComponent(await this.range('A2:A'))}`);
-    const ids = ((values.values ?? []) as unknown[]).flat().map(String);
-    const rowIndex = ids.findIndex(id => id === record.movie_id);
+    const values = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
+    const rows = values.values as unknown[][] ?? [];
+    const rowIndex = rows.findIndex(row => {
+      const current = rowToObject(row);
+      if (!current) return false;
+      if (current.movie_id === record.movie_id) return true;
+      return current.telegram_chat_id === record.telegram_chat_id
+        && current.telegram_message_id === record.telegram_message_id
+        && Boolean(record.telegram_chat_id)
+        && Boolean(record.telegram_message_id);
+    });
     const now = new Date().toISOString();
     const next = { ...record, updated_at: now, created_at: record.created_at ?? now };
     if (rowIndex < 0) {
