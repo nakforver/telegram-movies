@@ -102,4 +102,40 @@ describe('movie API', () => {
     expect(uploadMock).toHaveBeenCalledWith('movies/movie-1.mp4', expect.any(ReadableStream), 'video/mp4', 5);
     uploadMock.mockRestore();
   });
+
+  it('protects poster backfills', async () => {
+    const response = await fetch(base() + '/api/admin/movies/movie-1/poster', { method: 'POST' });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects a poster backfill for a missing movie', async () => {
+    const response = await fetch(base() + '/api/admin/movies/missing/poster', { method: 'POST', headers: { 'x-admin-secret': 'test' } });
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a poster backfill when Telegram provided no thumbnail', async () => {
+    const response = await fetch(base() + '/api/admin/movies/movie-1/poster', { method: 'POST', headers: { 'x-admin-secret': 'test' } });
+    expect(response.status).toBe(409);
+  });
+
+  it('backfills a poster from Telegram to R2 without re-uploading twice', async () => {
+    await catalog.upsert({ movie_id: 'poster-movie', title: 'Poster Movie', type: 'movie', status: 'published', telegram_thumbnail_file_id: 'thumb-1', created_at: '2026-01-06T00:00:00Z' });
+    const thumbnailMock = vi.spyOn(transferModule, 'withTelegramThumbnail');
+    thumbnailMock.mockResolvedValueOnce({
+      movie_id: 'poster-movie', title: 'Poster Movie', type: 'movie', status: 'published',
+      telegram_thumbnail_file_id: 'thumb-1', poster_url: '/api/posters/poster-movie', backdrop_url: '/api/posters/poster-movie'
+    } as MovieRecord);
+    const response = await fetch(base() + '/api/admin/movies/poster-movie/poster', { method: 'POST', headers: { 'x-admin-secret': 'test' } });
+    const body = await response.json() as { success: boolean; data: { uploaded: boolean; posterUrl: string } };
+    expect(response.status).toBe(200);
+    expect(body.data).toMatchObject({ uploaded: true, posterUrl: '/api/posters/poster-movie' });
+    expect(thumbnailMock).toHaveBeenCalledWith(expect.objectContaining({ movie_id: 'poster-movie' }), { force: true });
+    thumbnailMock.mockRestore();
+
+    const repeat = await fetch(base() + '/api/admin/movies/poster-movie/poster', { method: 'POST', headers: { 'x-admin-secret': 'test' } });
+    const repeatBody = await repeat.json() as { success: boolean; data: { uploaded: boolean } };
+    expect(repeat.status).toBe(200);
+    expect(repeatBody.data.uploaded).toBe(false);
+    await catalog.delete('poster-movie');
+  });
 });

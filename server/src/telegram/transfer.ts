@@ -54,8 +54,8 @@ export async function transferTelegramMovieToR2(record: MovieRecord): Promise<Tr
   }
 }
 
-export async function withTelegramThumbnail(record: MovieRecord): Promise<MovieRecord> {
-  if (record.poster_url || !record.telegram_thumbnail_file_id) return record;
+export async function withTelegramThumbnail(record: MovieRecord, options: { force?: boolean } = {}): Promise<MovieRecord> {
+  if ((record.poster_url && !options.force) || !record.telegram_thumbnail_file_id) return record;
   const thumbnail = await transferTelegramThumbnailToR2(record).catch(() => null);
   if (!thumbnail) return record;
   const posterUrl = posterProxyUrl(record.movie_id);
@@ -67,6 +67,8 @@ export async function withTelegramThumbnail(record: MovieRecord): Promise<MovieR
   };
 }
 
+const maxThumbnailBytes = 8 * 1024 * 1024;
+
 async function transferTelegramThumbnailToR2(record: MovieRecord): Promise<{ objectKey: string }> {
   const thumbnailId = requiredThumbnailId(record);
   const resolved = await resolveTelegramFileUrl(thumbnailId)
@@ -74,14 +76,57 @@ async function transferTelegramThumbnailToR2(record: MovieRecord): Promise<{ obj
   const upstream = await fetch(resolved.url, { headers: telegramGatewayHeaders() })
     .catch(error => { throw withStage(error, 'Telegram thumbnail download'); });
   if (!upstream.ok || !upstream.body) throw new Error(`Telegram thumbnail download failed (${upstream.status})`);
-  const contentType = upstream.headers.get('content-type') ?? 'image/jpeg';
-  if (!contentType.startsWith('image/')) throw new Error('Telegram thumbnail is not an image');
-  const contentLength = resolved.size ?? Number(upstream.headers.get('content-length') ?? Number.NaN);
-  const objectKey = thumbnailObjectKey(record.movie_id);
-  await uploadToR2(objectKey, upstream.body, contentType, contentLength)
-    .catch(error => { throw withStage(error, 'R2 thumbnail upload'); });
+  // Buffer the thumbnail (small: Telegram thumbs are typically < 200 KB) so the
+  // R2 upload always has a known content length even when Telegram serves the
+  // bytes with chunked encoding and no content-length header.
+  const bytes = await readBounded(upstream.body, maxThumbnailBytes);
   await upstream.body.cancel().catch(() => undefined);
+  const contentType = sniffImageContentType(bytes) ?? upstream.headers.get('content-type') ?? 'image/jpeg';
+  if (!contentType.startsWith('image/')) throw new Error('Telegram thumbnail is not an image');
+  const objectKey = thumbnailObjectKey(record.movie_id);
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    }
+  });
+  await uploadToR2(objectKey, body, contentType, bytes.byteLength)
+    .catch(error => { throw withStage(error, 'R2 thumbnail upload'); });
   return { objectKey };
+}
+
+async function readBounded(stream: ReadableStream<Uint8Array>, limit: number): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value?.byteLength) {
+        total += value.byteLength;
+        if (total > limit) throw new Error('Telegram thumbnail exceeds the size limit');
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function sniffImageContentType(bytes: Uint8Array): string | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
+  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
+  return null;
 }
 
 function requiredThumbnailId(record: MovieRecord): string {

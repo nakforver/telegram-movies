@@ -6,7 +6,7 @@ import { CatalogService } from '../storage/catalog-service.js';
 import { MemoryStore } from '../storage/memory.js';
 import { GoogleSheetsStore } from '../storage/google-sheets.js';
 import { telegramUpdateToMovie, type TelegramUpdate } from '../telegram/ingestion.js';
-import { transferTelegramMovieToR2 } from '../telegram/transfer.js';
+import { transferTelegramMovieToR2, withTelegramThumbnail } from '../telegram/transfer.js';
 import { uploadToR2 } from '../storage/r2.js';
 import { categories, episodes, findEpisode, normalizeQuery, publicMovie, queryCatalog, searchMovies, toPlaySource } from '../domain/catalog.js';
 import { signPlaybackToken } from './playback-tokens.js';
@@ -122,6 +122,27 @@ async function handleAdmin(request: IncomingMessage, response: ServerResponse, c
       mediaSource: saved.media_source,
       mediaObjectKey: saved.media_object_key
     });
+    return true;
+  }
+  const posterMatch = pathname.match(/^\/api\/admin\/movies\/([^/]+)\/poster$/);
+  if (posterMatch && request.method === 'POST') {
+    const movieId = decodeURIComponent(posterMatch[1]);
+    const movies = await catalog.list(true);
+    const movie = movies.find(item => item.movie_id === movieId);
+    if (!movie) throw new HttpError(404, 'Movie not found');
+    if (!movie.telegram_thumbnail_file_id?.trim()) {
+      throw new HttpError(409, 'This title has no Telegram thumbnail to backfill (the original post had no thumbnail, or it was ingested before thumbnails were captured)');
+    }
+    const url = new URL(request.url ?? '/', 'http://localhost');
+    const force = url.searchParams.get('force') === 'true';
+    if (movie.poster_url && !force) {
+      success(response, { movieId, uploaded: false, posterUrl: movie.poster_url, reason: 'Poster already exists (use ?force=true to re-upload)' });
+      return true;
+    }
+    const next = await withTelegramThumbnail(movie, { force: true });
+    if (!next.poster_url) throw new HttpError(502, 'Telegram thumbnail fetch or R2 upload failed');
+    const saved = await catalog.upsert(next);
+    success(response, { movieId, uploaded: true, posterUrl: saved.poster_url, backdropUrl: saved.backdrop_url });
     return true;
   }
   const uploadMatch = pathname.match(/^\/api\/admin\/movies\/([^/]+)\/upload$/);

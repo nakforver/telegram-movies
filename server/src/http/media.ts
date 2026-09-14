@@ -62,9 +62,9 @@ export async function handlePosterMedia(request: IncomingMessage, response: Serv
   if (request.method !== 'GET' && request.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
   const movie = findEpisode(await catalog.list(), decodeURIComponent(movieId));
   if (!movie) throw new HttpError(404, 'Movie not found');
-  if (movie.media_source !== 'r2' || !movie.media_object_key) {
-    throw new HttpError(409, 'A poster is unavailable because this title has not been transferred to R2.');
-  }
+  // Posters are served independently of the video transfer state: a thumbnail
+  // uploaded from Telegram must stay visible even while the video itself is
+  // still processing or has failed to transfer.
   const upstream = await streamR2Object(thumbnailObjectKey(movie.movie_id)).catch(() => {
     throw new HttpError(404, 'Poster is not available yet');
   });

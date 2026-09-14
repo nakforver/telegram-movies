@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { CatalogService } from '../src/storage/catalog-service.js';
 import { MemoryStore } from '../src/storage/memory.js';
-import { handleMedia } from '../src/http/media.js';
+import { handleMedia, handlePosterMedia } from '../src/http/media.js';
 import { signPlaybackToken } from '../src/http/playback-tokens.js';
 
 process.env.PLAYBACK_TOKEN_SECRET = 'test-playback-secret';
@@ -28,8 +28,12 @@ describe('R2 media endpoint', () => {
   beforeEach(() => {
     catalog.invalidate();
     server = createServer(async (request, response) => {
-      const movieId = decodeURIComponent(request.url?.split('/').pop()?.replace(/\?.*$/, '') ?? '');
-      try { await handleMedia(request, response, catalog, movieId); }
+      const url = new URL(request.url ?? '/', 'http://localhost');
+      const movieId = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+      try {
+        if (url.pathname.startsWith('/api/posters/')) await handlePosterMedia(request, response, catalog, movieId);
+        else await handleMedia(request, response, catalog, movieId);
+      }
       catch (error) {
         response.writeHead((error as { status?: number }).status ?? 500, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ error: (error as Error).message }));
@@ -114,5 +118,42 @@ describe('R2 media endpoint', () => {
     }));
     const response = await fetch(`${base()}${mediaPath('movie-1')}`);
     expect(response.status).toBe(502);
+  });
+
+  it('serves a poster through the safe backend proxy without exposing R2', async () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).startsWith('http://127.0.0.1:')) return realFetch(url, init);
+      expect(String(url)).not.toContain('test-secret-key');
+      return new Response(jpeg, { headers: { 'content-type': 'image/jpeg', 'content-length': String(jpeg.byteLength) } });
+    }));
+    const response = await fetch(`${base()}/api/posters/movie-1`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/jpeg');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(jpeg);
+  });
+
+  it('serves a poster even when the video itself has not transferred to R2', async () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).startsWith('http://127.0.0.1:')) return realFetch(url, init);
+      return new Response(jpeg, { headers: { 'content-type': 'image/jpeg', 'content-length': String(jpeg.byteLength) } });
+    }));
+    const response = await fetch(`${base()}/api/posters/processing`);
+    expect(response.status).toBe(200);
+  });
+
+  it('returns 404 when no poster object exists yet', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).startsWith('http://127.0.0.1:')) return realFetch(url, init);
+      return new Response('Missing', { status: 404 });
+    }));
+    const response = await fetch(`${base()}/api/posters/movie-1`);
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for a poster of a missing movie', async () => {
+    const response = await fetch(`${base()}/api/posters/missing`);
+    expect(response.status).toBe(404);
   });
 });

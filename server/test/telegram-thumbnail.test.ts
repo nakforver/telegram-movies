@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as r2Module from '../src/storage/r2.js';
 import * as telegramMediaModule from '../src/telegram/media.js';
-import { transferTelegramMovieToR2 } from '../src/telegram/transfer.js';
+import { transferTelegramMovieToR2, withTelegramThumbnail } from '../src/telegram/transfer.js';
 import type { MovieRecord } from '../src/types.js';
 
 process.env.TELEGRAM_API_BASE = 'https://telegram-bot-api.example.com';
@@ -51,7 +51,7 @@ describe('Telegram thumbnail transfer', () => {
     expect(result.record.poster_url).toBe('/api/posters/movie-1');
     expect(result.record.backdrop_url).toBe('/api/posters/movie-1');
     expect(uploadMock).toHaveBeenNthCalledWith(1, 'movies/movie-1.mp4', expect.any(ReadableStream), 'video/mp4', 1024);
-    expect(uploadMock).toHaveBeenNthCalledWith(2, 'posters/movie-1.jpg', expect.any(ReadableStream), 'image/jpeg', 64);
+    expect(uploadMock).toHaveBeenNthCalledWith(2, 'posters/movie-1.jpg', expect.any(ReadableStream), 'image/jpeg', 'thumbnail'.length);
   });
 
   it('does not upload the same thumbnail twice', async () => {
@@ -99,6 +99,49 @@ describe('Telegram thumbnail transfer', () => {
 
     expect(result.transferred).toBe(true);
     expect(result.record.poster_url).toBeUndefined();
+    expect(uploadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('detects a jpeg thumbnail even when Telegram serves it as octet-stream without a length', async () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    getFileMock.mockImplementation(async fileId => ({
+      url: `https://telegram-bot-api.example.com/file/${fileId}`,
+      // No size reported and no content-length header: chunked encoding.
+      size: undefined,
+      expiresAt: new Date().toISOString()
+    }));
+    uploadMock.mockResolvedValue({ objectKey: 'posters/movie-1.jpg' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(jpeg, { headers: { 'content-type': 'application/octet-stream' } })));
+
+    const result = await withTelegramThumbnail({ ...baseRecord });
+
+    expect(result.poster_url).toBe('/api/posters/movie-1');
+    expect(uploadMock).toHaveBeenCalledWith('posters/movie-1.jpg', expect.any(ReadableStream), 'image/jpeg', jpeg.byteLength);
+  });
+
+  it('leaves a record unchanged when the thumbnail bytes are not an image', async () => {
+    getFileMock.mockResolvedValue({ url: 'https://telegram-bot-api.example.com/file/thumbnail-file', size: 4, expiresAt: new Date().toISOString() });
+    uploadMock.mockResolvedValue({ objectKey: 'posters/movie-1.jpg' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([0, 1, 2, 3]), { headers: { 'content-type': 'text/plain' } })));
+
+    const result = await withTelegramThumbnail({ ...baseRecord });
+
+    expect(result.poster_url).toBeUndefined();
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it('re-uploads the thumbnail when forced, otherwise keeps the existing poster', async () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    getFileMock.mockResolvedValue({ url: 'https://telegram-bot-api.example.com/file/thumbnail-file', size: jpeg.byteLength, expiresAt: new Date().toISOString() });
+    uploadMock.mockResolvedValue({ objectKey: 'posters/movie-1.jpg' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(jpeg, { headers: { 'content-type': 'image/jpeg' } })));
+    const withPoster = { ...baseRecord, poster_url: '/api/posters/movie-1', backdrop_url: '/api/posters/movie-1' };
+
+    expect(await withTelegramThumbnail(withPoster)).toEqual(withPoster);
+    expect(uploadMock).not.toHaveBeenCalled();
+
+    const forced = await withTelegramThumbnail(withPoster, { force: true });
+    expect(forced.poster_url).toBe('/api/posters/movie-1');
     expect(uploadMock).toHaveBeenCalledTimes(1);
   });
 });
