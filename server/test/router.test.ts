@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { createServer, type Server } from 'node:http';
 import { CatalogService } from '../src/storage/catalog-service.js';
 import { MemoryStore } from '../src/storage/memory.js';
+import * as r2Module from '../src/storage/r2.js';
 import * as transferModule from '../src/telegram/transfer.js';
 import type { MovieRecord } from '../src/types.js';
 
@@ -80,5 +81,25 @@ describe('movie API', () => {
     expect(response.status).toBe(200);
     expect(body.data).toMatchObject({ transferred: true, mediaSource: 'r2', mediaObjectKey: 'movies/movie-1.mp4' });
     transferMock.mockRestore();
+  });
+
+  it('uploads a streamed video to R2 and marks it playable', async () => {
+    process.env.R2_ACCOUNT_ID = 'test-account';
+    process.env.R2_ACCESS_KEY_ID = 'test-access-key';
+    process.env.R2_SECRET_ACCESS_KEY = 'test-secret-key';
+    process.env.R2_BUCKET = 'test-bucket';
+    const uploadMock = vi.spyOn(r2Module, 'uploadToR2');
+    uploadMock.mockResolvedValueOnce({ objectKey: 'movies/movie-1.mp4' });
+    const video = new Uint8Array([1, 2, 3, 4, 5]);
+    const response = await fetch(base() + '/api/admin/movies/movie-1/upload', {
+      method: 'PUT',
+      headers: { 'x-admin-secret': 'test', 'content-type': 'video/mp4', 'content-length': String(video.byteLength) },
+      body: video
+    });
+    const body = await response.json() as { success: boolean; data: { transferred: boolean; mediaSource: string; mediaObjectKey: string } };
+    expect(response.status).toBe(200);
+    expect(body.data).toMatchObject({ transferred: true, mediaSource: 'r2', mediaObjectKey: 'movies/movie-1.mp4' });
+    expect(uploadMock).toHaveBeenCalledWith('movies/movie-1.mp4', expect.any(ReadableStream), 'video/mp4', 5);
+    uploadMock.mockRestore();
   });
 });

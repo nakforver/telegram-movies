@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { CatalogMovie, MoviePage } from '../types';
-import MovieCard from '../components/MovieCard';
+import MovieCard, { backdropUrl, MovieImage } from '../components/MovieCard';
 import Section from '../components/Section';
 import Skeleton from '../components/Skeleton';
 import { useNavigate } from '../router';
@@ -48,6 +48,7 @@ export default function HomePage() {
   }
 
   function hero(movie: CatalogMovie) {
+    const backdrop = backdropUrl(movie);
     return (
       <article
         key={movie.movie_id}
@@ -60,7 +61,7 @@ export default function HomePage() {
           if (event.key === 'Enter' || event.key === ' ') navigate(movie.type === 'series' ? `/series/${movie.movie_id}` : `/movies/${movie.movie_id}`);
         }}
       >
-        <img src={movie.backdrop_url || movie.poster_url || ''} alt="" loading="lazy" />
+        {backdrop ? <MovieImage className="hero-image" src={backdrop} alt="" /> : <div className="hero-placeholder" aria-hidden="true"><span>🎬</span></div>}
         <div className="hero-content"><span className="pill">{movie.type === 'series' ? 'Series' : 'Movie'}</span><strong>{movie.title}</strong>{movie.title_km && <div className="khmer">{movie.title_km}</div>}</div>
       </article>
     );

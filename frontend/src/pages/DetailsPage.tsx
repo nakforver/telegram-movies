@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import type { CatalogMovie } from '../types';
 import { favorites } from '../services/storage';
 import { useNavigate, useParams } from '../router';
+import { backdropUrl, MovieImage, posterUrl } from '../components/MovieCard';
 
 export default function DetailsPage() {
   const params = useParams<{ id: string }>();
@@ -12,11 +13,13 @@ export default function DetailsPage() {
   useEffect(() => { api.movie(params.id).then(setMovie).catch(setError); }, [params.id]);
   if (error) return <div className="error">{error}</div>;
   if (!movie) return <div className="loading">Loading…</div>;
+  const backdrop = backdropUrl(movie);
+  const poster = posterUrl(movie);
   return (
     <>
-      <div className="details-hero"><img src={movie.backdrop_url || movie.poster_url || ''} alt="" /></div>
+      <div className="details-hero">{backdrop ? <MovieImage className="details-hero-image" src={backdrop} alt="" /> : <div className="hero-placeholder" aria-hidden="true"><span>🎬</span></div>}</div>
       <div className="details-body">
-        <img className="details-poster" src={movie.poster_url || ''} alt="" />
+        <MovieImage className="details-poster" src={poster} alt={movie.title} />
         <div><h1>{movie.title}</h1>{movie.title_km && <div className="khmer">{movie.title_km}</div>}<div className="khmer">{movie.original_title}</div></div>
       </div>
       <div className="details-meta">

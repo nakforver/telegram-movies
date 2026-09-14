@@ -95,7 +95,7 @@ describe('GoogleSheetsStore', () => {
       [headerRange]: { values: [LEGACY_SHEET_FIELD_SETS[1]] },
       [dataRange]: { values: [legacyRow] },
       ':batchUpdate': {},
-      'A2:AA?valueInputOption=RAW': {}
+      'A2:AB?valueInputOption=RAW': {}
     });
 
     const rows = await new GoogleSheetsStore('spreadsheet-id').list();
@@ -112,19 +112,19 @@ describe('GoogleSheetsStore', () => {
       [headerRange]: { values: [SHEET_FIELDS] },
       [dataRange]: { values: [misalignedRow] },
       ':batchUpdate': {},
-      'A2:AA?valueInputOption=RAW': {}
+      'A2:AB?valueInputOption=RAW': {}
     });
 
     const rows = await new GoogleSheetsStore('spreadsheet-id').list();
 
     expect(rows).toHaveLength(1);
-    const fillCall = request.mock.calls.find(([method, path]) => method === 'PUT' && decodeURIComponent(String(path)).includes('Movies!A2:AA?valueInputOption=RAW'));
+    const fillCall = request.mock.calls.find(([method, path]) => method === 'PUT' && decodeURIComponent(String(path)).includes('Movies!A2:AB?valueInputOption=RAW'));
     const values = (fillCall?.[2] as { values: string[][] }).values[0];
     expect(values[19]).toBe('');
     expect(values[20]).toBe('published');
     expect(Date.parse(values[21])).toBeGreaterThan(0);
     expect(Date.parse(values[22])).toBeGreaterThan(0);
-    expect(values.slice(23)).toEqual(['none', '', '', '']);
+    expect(values.slice(23)).toEqual(['none', '', '', '', '']);
   });
 
   it('rejects an unsupported existing header layout', async () => {

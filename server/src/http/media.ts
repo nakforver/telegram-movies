@@ -3,6 +3,7 @@ import { findEpisode } from '../domain/catalog.js';
 import type { CatalogService } from '../storage/catalog-service.js';
 import { streamR2Object } from '../storage/r2.js';
 import { isRangeValid } from '../telegram/media.js';
+import { thumbnailObjectKey } from '../telegram/transfer.js';
 import { verifyPlaybackToken } from './playback-tokens.js';
 import { HttpError } from './router.js';
 
@@ -55,4 +56,31 @@ export async function handleMedia(request: IncomingMessage, response: ServerResp
       response.destroy(reason instanceof Error ? reason : new Error(String(reason)));
     }
   }));
+}
+
+export async function handlePosterMedia(request: IncomingMessage, response: ServerResponse, catalog: CatalogService, movieId: string): Promise<void> {
+  if (request.method !== 'GET' && request.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
+  const movie = findEpisode(await catalog.list(), decodeURIComponent(movieId));
+  if (!movie) throw new HttpError(404, 'Movie not found');
+  if (movie.media_source !== 'r2' || !movie.media_object_key) {
+    throw new HttpError(409, 'A poster is unavailable because this title has not been transferred to R2.');
+  }
+  const upstream = await streamR2Object(thumbnailObjectKey(movie.movie_id)).catch(() => {
+    throw new HttpError(404, 'Poster is not available yet');
+  });
+  if (!upstream.ok || !upstream.body) throw new HttpError(502, 'R2 poster request failed');
+  const poster = Buffer.from(await upstream.arrayBuffer());
+  const contentType = upstream.headers.get('content-type') ?? 'image/jpeg';
+  if (!contentType.startsWith('image/')) throw new HttpError(415, 'Poster object is not an image');
+  response.writeHead(200, {
+    'content-type': contentType,
+    'content-length': String(poster.byteLength),
+    'cache-control': 'public,max-age=86400,immutable',
+    'x-content-type-options': 'nosniff'
+  });
+  if (request.method === 'HEAD') {
+    response.end();
+    return;
+  }
+  response.end(poster);
 }

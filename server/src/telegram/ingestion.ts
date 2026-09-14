@@ -5,6 +5,19 @@ interface TelegramFile {
   file_name?: string;
   file_size?: number;
   mime_type?: string;
+  thumbnail?: TelegramThumbnail;
+}
+
+interface TelegramThumbnail {
+  file_id?: string;
+  file_size?: number;
+  mime_type?: string;
+}
+
+interface TelegramEntity {
+  type: string;
+  offset: number;
+  length: number;
 }
 
 export interface TelegramUpdate {
@@ -16,6 +29,7 @@ export interface TelegramUpdate {
     chat?: { id?: number };
     message_id?: number;
     caption?: string;
+    caption_entities?: TelegramEntity[];
     video?: TelegramFile;
     document?: TelegramFile;
     date?: number;
@@ -31,10 +45,10 @@ export function telegramUpdateToMovie(update: TelegramUpdate): MovieRecord | nul
 
   const telegramChatId = String(post.chat.id ?? '');
   const telegramMessageId = String(post.message_id ?? '');
-  const caption = post.caption?.trim() ?? '';
+  const caption = cleanTelegramText(post.caption ?? '', post.caption_entities ?? []);
   const filename = media.file_name?.replace(/\.[^.]+$/, '').trim() ?? '';
   const [captionTitle = '', ...descriptionLines] = caption.split('\n');
-  const title = (captionTitle || filename || `Telegram movie ${telegramChatId}-${telegramMessageId}`).slice(0, 200);
+  const title = cleanTitle(captionTitle || filename || `Telegram movie ${telegramChatId}-${telegramMessageId}`).slice(0, 200);
 
   return {
     movie_id: `telegram-${telegramChatId}-${telegramMessageId}`,
@@ -57,6 +71,7 @@ export function telegramUpdateToMovie(update: TelegramUpdate): MovieRecord | nul
     telegram_message_id: telegramMessageId,
     telegram_file_id: media.file_id,
     telegram_file_size: media.file_size,
+    telegram_thumbnail_file_id: getThumbnail(post)?.file_id ?? '',
     status: 'published',
     created_at: new Date(post.date ? post.date * 1000 : Date.now()).toISOString(),
     updated_at: new Date().toISOString()
@@ -67,4 +82,48 @@ function getVideo(post: NonNullable<TelegramUpdate['channel_post']>): TelegramFi
   if (post.video?.file_id) return post.video;
   if (post.document?.file_id && post.document.mime_type?.startsWith('video/')) return post.document;
   return null;
+}
+
+function getThumbnail(post: NonNullable<TelegramUpdate['channel_post']>): TelegramThumbnail | null {
+  return post.video?.thumbnail ?? post.document?.thumbnail ?? null;
+}
+
+export function cleanTelegramText(text: string, entities: TelegramEntity[]): string {
+  const hasFormatting = entities.some(entity =>
+    entity.offset >= 0 &&
+    entity.length >= 0 &&
+    ['bold', 'italic', 'underline', 'strikethrough', 'spoiler', 'code', 'pre'].includes(entity.type)
+  );
+  if (hasFormatting) {
+    const escaped = new Map<string, string>();
+    let escapedIndex = 0;
+    text = text
+      .replace(/\\([\\_*~`|])/gu, (_, character: string) => {
+        const placeholder = `\uE000${escapedIndex++}`;
+        escaped.set(placeholder, character);
+        return placeholder;
+      })
+      .replace(/(__)(.*?)\1/gu, '$2')
+      .replace(/(\*\*\*|\*\*|\*)(.*?)\1/gu, '$2')
+      .replace(/(__)(.*?)\1/gu, '$2')
+      .replace(/(_)(.*?)\1/gu, '$2')
+      .replace(/(~)(.*?)\1/gu, '$2')
+      .replace(/(\|\|)(.*?)\1/gu, '$2')
+      .replace(/(```)(.*?)\1/gu, '$2')
+      .replace(/(`)(.*?)\1/gu, '$2');
+    escaped.forEach((character, placeholder) => {
+      text = text.replace(placeholder, character);
+    });
+  }
+  return text
+    .replace(/\\([\\_*[\]()~`>#+\-=|{}.!])/gu, '$1')
+    .replace(/\u200b|\u200c|\u200d|\ufeff/g, '')
+    .trim();
+}
+
+export function cleanTitle(title: string): string {
+  let result = title.replace(/\s+/g, ' ').trim();
+  while (/^[\p{P}\p{S}\p{C}]/u.test(result)) result = result.slice(1);
+  while (/[\p{P}\p{S}\p{C}]$/u.test(result) && !result.endsWith('*')) result = result.slice(0, -1);
+  return result;
 }

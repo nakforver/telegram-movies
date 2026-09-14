@@ -45,6 +45,18 @@ describe('Telegram API base', () => {
     expect(resolved.size).toBe(1234);
   });
 
+  it('strips only the self-hosted storage root from local file paths', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      result: { file_id: 'file-1', file_path: '/var/lib/telegram-bot-api/8739290687:secret/videos/movie.mp4', file_size: 1234 }
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const resolved = await resolveTelegramFileUrl('file-1');
+
+    expect(resolved.url).toBe('https://telegram-bot-api.example.com/file/bottest-token/videos/movie.mp4');
+  });
+
   it('uses the configured self-hosted API base for webhook setup', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true, result: true }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

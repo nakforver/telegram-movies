@@ -32,6 +32,7 @@ HTML5 player
 - Debounced search across English, Khmer, original title, year, and genre
 - Server-side catalog filtering and pagination
 - Series seasons and episode records with independent Telegram references
+- Automatic private Telegram-to-R2 thumbnail transfer for newly ingested videos
 - Favorites, watch history, and continue-watching playback metadata
 - Protected server-side admin write/import APIs
 - Server-side Google Sheets client caching
@@ -45,10 +46,10 @@ HTML5 player
 4. Add an exact header row in row 1:
 
 ```text
-movie_id | title | title_km | original_title | description | poster_url | backdrop_url | category | genre | year | country | duration | rating | type | season | episode | telegram_chat_id | telegram_message_id | telegram_file_id | telegram_file_size | status | created_at | updated_at | media_source | media_url | media_object_key | media_status_reason
+movie_id | title | title_km | original_title | description | poster_url | backdrop_url | category | genre | year | country | duration | rating | type | season | episode | telegram_chat_id | telegram_message_id | telegram_file_id | telegram_file_size | status | created_at | updated_at | media_source | media_url | media_object_key | media_status_reason | telegram_thumbnail_file_id
 ```
 
-Values are read starting at row 2. Set `status` to `published` or `draft`, `type` to `movie` or `series`, and `media_source` to `r2` only after the object exists in R2. Existing supported 22-column sheets are automatically upgraded to the full schema.
+Values are read starting at row 2. Set `status` to `published` or `draft`, `type` to `movie` or `series`, and `media_source` to `r2` only after the object exists in R2. Existing supported 22- and 27-column sheets are automatically upgraded to the current schema.
 
 For a series, store a parent row (without `episode`) and one row per episode. Use the same `title` for episode rows, include `season`, and number `episode`. Each row may have its own Telegram chat/message/file reference.
 
@@ -134,8 +135,10 @@ All responses use the same envelope. Successful responses use `{ "success": true
 - `GET /api/search?q=&page=&pageSize=&type=&category=&genre=&year=`
 - `GET /api/episodes/:movieId`
 - `GET /api/play/:id`
+- `GET /api/posters/:id` – safely proxies a private R2 movie thumbnail
 - `POST /api/admin/movies`
 - `POST /api/admin/movies/:movieId/transfer` – retries Telegram-to-R2 transfer for an existing catalog record
+- `PUT /api/admin/movies/:movieId/upload` – streams a video file directly from the self-hosted gateway into R2
 - `PUT /api/admin/movies/:id`
 - `DELETE /api/admin/movies/:id`
 - `POST /api/admin/import-telegram`
@@ -173,13 +176,16 @@ Telegram channel posts are the ingestion trigger. On webhook receipt, the server
 
 1. `getFile` resolves a temporary Telegram download URL.
 2. The server streams the response body directly to R2 using a signed `PUT`.
-3. Only after R2 confirms the upload does the backend write `media_source=r2`, `media_object_key`, and durable R2 metadata to Google Sheets.
-4. `GET /api/play/:id` returns a short-lived Wasmer backend URL with an HMAC playback token. The browser never receives Telegram or R2 credentials.
-5. `GET /api/media/:id` verifies the token, creates a short-lived presigned R2 GET, forwards Range requests, and streams the response with `206 Partial Content` support.
+3. Telegram-provided thumbnails are downloaded through the same authenticated Bot API gateway and streamed to a private `posters/` key in R2.
+4. Only after R2 confirms the upload does the backend write `media_source=r2`, `media_object_key`, durable poster metadata, and a safe `/api/posters/:id` proxy URL to Google Sheets.
+5. `GET /api/play/:id` returns a short-lived Wasmer backend URL with an HMAC playback token. The browser never receives Telegram or R2 credentials.
+6. `GET /api/media/:id` verifies the token, creates a short-lived presigned R2 GET, forwards Range requests, and streams the response with `206 Partial Content` support.
+
+The movie browser uses only the authenticated backend poster proxy. The R2 bucket remains private, and the Bot API token and R2 credentials never reach the browser. If Telegram does not expose a thumbnail, ingestion remains successful and the Mini App renders its SVG placeholder. Repeated webhooks do not upload the same thumbnail again because a `poster_url` is persisted before retry processing.
 
 The public Telegram Bot API can resolve and download only files up to approximately 20 MB. Larger movies are stored in Sheets (or marked by an authenticated retry) with a clear `media_status_reason` and remain non-playable instead of being faked. This is a Telegram Bot API limitation, not a Wasmer or R2 limitation.
 
-For full-size channel-only uploads, run a self-hosted Telegram Bot API server and expose it to Wasmer through an authenticated HTTPS reverse proxy. Set `TELEGRAM_API_BASE` to that proxy endpoint, configure R2, redeploy, run `npm run telegram:setup`, then republish the channel video or call `POST /api/admin/movies/:movieId/transfer` for an existing record. Without that server, upload the video to R2 separately and set its row to `media_source=r2` plus the object key.
+For full-size channel-only uploads, run a self-hosted Telegram Bot API server and expose it through an authenticated HTTPS reverse proxy. Set `TELEGRAM_API_BASE` to that proxy endpoint and configure R2. If the deployment platform blocks direct outbound connections, run `npm run telegram:transfer-worker` from a host that can reach the gateway. The worker discovers pending catalog records every `TELEGRAM_R2_POLL_MS` milliseconds, streams them into R2, and saves `media_source=r2` metadata. It also repairs existing R2 records with missing thumbnails by generating a frame and saving a safe poster proxy URL. The Nginx gateway route must remain authenticated and only expose files under the Bot API video directory.
 
 Cloudflare setup:
 
@@ -224,7 +230,7 @@ The default production URL is `https://telegram-movies.wasmer.app` (subject to W
 ## Known Limitations
 
 - Without configured Sheets credentials, the app deploys and responds correctly but has an empty catalog.
-- The current player is architecture-ready but does not fetch or proxy a Telegram media stream.
+- Wasmer Edge blocks direct outbound connections to some origins; the transfer worker runs on the self-hosted Telegram gateway host and updates the deployed catalog through the authenticated admin API.
 - Favorites/history are local to the Telegram/browser instance, which avoids server credential exposure but does not synchronize across devices.
 - `movies` and `search` bot commands are registered; persistent webhook-bot response behavior can be added in a future deployment.
 - Wasmer secrets were not populated during this repository build because no catalog credentials or admin secret were provided.

@@ -17,6 +17,7 @@
     "test": "npm test --workspace server && npm run typecheck --workspace frontend",
     "test:e2e": "npm run test:e2e --workspace frontend",
     "telegram:setup": "npm exec --workspace server -- tsx src/setup-telegram.ts",
+    "telegram:transfer-worker": "npm exec --workspace server -- tsx src/workers/telegram-r2.ts",
     "wasmer:deploy": "./scripts/deploy-wasmer.sh"
   },
   "devDependencies": {

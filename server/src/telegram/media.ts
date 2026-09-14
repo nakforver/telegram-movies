@@ -26,7 +26,7 @@ export function resolveTelegramFileUrl(fileId: string): Promise<{ url: string; s
         throw new Error(description);
       }
       return {
-        url: `${apiBase}/file/bot${telegramBotToken}/${result.result.file_path}`,
+        url: `${apiBase}/file/bot${telegramBotToken}/${result.result.file_path.replace(/^\/var\/lib\/telegram-bot-api\/[^/]+\//, '')}`,
         size: result.result.file_size,
         expiresAt: new Date(Date.now() + 55 * 60 * 1000).toISOString()
       };

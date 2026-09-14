@@ -8,6 +8,7 @@ export interface R2Configuration {
 }
 
 const unsignedPayload = 'UNSIGNED-PAYLOAD';
+const maxPresignedUrlSeconds = 7 * 24 * 60 * 60;
 
 export function r2Configuration(): R2Configuration | null {
   const accountId = process.env.R2_ACCOUNT_ID ?? '';
@@ -117,7 +118,7 @@ export function signedR2Url(objectKey: string, expiresAt = Date.now() + 5 * 60 *
     'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
     'X-Amz-Credential': `${configuration.accessKeyId}/${dateStamp}/auto/s3/aws4_request`,
     'X-Amz-Date': amzDate,
-    'X-Amz-Expires': String(Math.max(1, Math.floor((expiresAt - date.getTime()) / 1000))),
+    'X-Amz-Expires': String(Math.min(maxPresignedUrlSeconds, Math.max(1, Math.floor((expiresAt - date.getTime()) / 1000)))),
     'X-Amz-SignedHeaders': 'host'
   });
   const canonicalQuery = [...query.entries()].sort(([left], [right]) => left.localeCompare(right))

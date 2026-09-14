@@ -42,7 +42,8 @@ export function normalizeMovie(row: MovieRecord): Movie | null {
     media_source: required(row.media_source) === 'r2' ? 'r2' as const : 'none' as const,
     media_url: required(row.media_url),
     media_object_key: required(row.media_object_key),
-    media_status_reason: required(row.media_status_reason)
+    media_status_reason: required(row.media_status_reason),
+    telegram_thumbnail_file_id: required(row.telegram_thumbnail_file_id)
   };
 
   if (!record.movie_id || !record.title) return null;

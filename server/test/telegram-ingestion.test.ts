@@ -18,7 +18,8 @@ describe('Telegram channel movie ingestion', () => {
 
     expect(movie).not.toBeNull();
     const keys = Object.keys(movie ?? {});
-    expect(SHEET_FIELDS.slice(0, -4).every(field => keys.includes(field))).toBe(true);
+    expect(SHEET_FIELDS.slice(0, -5).every(field => keys.includes(field))).toBe(true);
+    expect(keys).toContain('telegram_thumbnail_file_id');
     expect(keys).toContain('telegram_file_size');
     expect(movie?.telegram_file_size).toBe(1024);
     expect(movie).toMatchObject({
@@ -50,6 +51,25 @@ describe('Telegram channel movie ingestion', () => {
     });
   });
 
+  it('converts bot formatted captions into readable titles', () => {
+    const movie = telegramUpdateToMovie({
+      channel_post: {
+        chat: { id: -1001234 },
+        message_id: 4570,
+        caption: '\u200b*New _Popmovies_ Action Film\\*\nUploaded from Telegram',
+        caption_entities: [
+          { type: 'bold', offset: 1, length: 4 },
+          { type: 'italic', offset: 6, length: 10 },
+          { type: 'code', offset: 17, length: 12 }
+        ],
+        video: { file_id: 'test-file-id-3' },
+        date: 1700000003
+      }
+    });
+
+    expect(movie?.title).toBe('New Popmovies Action Film*');
+  });
+
   it('ignores non-video channel posts', () => {
     expect(telegramUpdateToMovie({ channel_post: { chat: { id: -1001234 }, message_id: 4569, caption: 'Text only', date: 1700000002 } })).toBeNull();
   });
@@ -59,5 +79,22 @@ describe('Telegram channel movie ingestion', () => {
     const second = telegramUpdateToMovie(update);
     expect(first?.movie_id).toBe('telegram--1001234-4567');
     expect(second?.movie_id).toBe(first?.movie_id);
+  });
+
+  it('captures Telegram video thumbnails for private R2 transfer', () => {
+    const movie = telegramUpdateToMovie({
+      channel_post: {
+        chat: { id: -1001234 },
+        message_id: 4571,
+        video: {
+          file_id: 'video-file',
+          file_size: 1024,
+          thumbnail: { file_id: 'thumbnail-file', file_size: 64, mime_type: 'image/jpeg' }
+        },
+        date: 1700000004
+      }
+    });
+
+    expect(movie?.telegram_thumbnail_file_id).toBe('thumbnail-file');
   });
 });

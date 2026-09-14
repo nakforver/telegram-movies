@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 import { port, isProduction } from './config.js';
-import { handleMedia } from './http/media.js';
+import { handleMedia, handlePosterMedia } from './http/media.js';
 import { createCatalog, handleApi, HttpError } from './http/router.js';
 
 const catalog = createCatalog();
@@ -20,6 +20,11 @@ const server = createServer(async (request: IncomingMessage, response: ServerRes
     const mediaMatch = pathname.match(/^\/api\/media\/([^/]+)$/);
     if (mediaMatch) {
       await handleMedia(request, response, catalog, decodeURIComponent(mediaMatch[1]));
+      return;
+    }
+    const posterMatch = pathname.match(/^\/api\/posters\/([^/]+)$/);
+    if (posterMatch) {
+      await handlePosterMedia(request, response, catalog, decodeURIComponent(posterMatch[1]));
       return;
     }
     if (await handleApi(request, response, catalog, pathname, url.searchParams)) return;

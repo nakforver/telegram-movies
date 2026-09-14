@@ -27,6 +27,7 @@ export interface MovieRecord {
   media_url?: string;
   media_object_key?: string;
   media_status_reason?: string;
+  telegram_thumbnail_file_id?: string;
 }
 
 

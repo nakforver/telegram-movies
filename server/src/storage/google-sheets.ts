@@ -72,7 +72,7 @@ export class GoogleSheetsStore implements CatalogStore {
   }
 
   private async fillMissingRowColumns(): Promise<void> {
-    const response = await this.request('GET', `/values/${encodeURIComponent(await this.range('A2:AA1000'))}`);
+    const response = await this.request('GET', `/values/${encodeURIComponent(await this.range(`A2:${columnLetter(SHEET_FIELDS.length)}1000`))}`);
     const rows = (response.values ?? []) as unknown[][];
     if (!rows.length) return;
     const migrationTime = new Date().toISOString();
@@ -92,7 +92,7 @@ export class GoogleSheetsStore implements CatalogStore {
       next[23] = 'none';
       next[24] = '';
       next[25] = '';
-      next[26] = '';
+      SHEET_FIELDS.slice(23).forEach((_, index) => { if (index > 0) next[23 + index] = ''; });
       return next;
     });
     if (!values.length) return;

@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { adminSecret, googleSpreadsheetId, miniAppUrl, port, telegramBotToken, telegramWebhookSecret } from '../config.js';
 import { sendMessage } from '../telegram/api.js';
@@ -6,6 +7,7 @@ import { MemoryStore } from '../storage/memory.js';
 import { GoogleSheetsStore } from '../storage/google-sheets.js';
 import { telegramUpdateToMovie, type TelegramUpdate } from '../telegram/ingestion.js';
 import { transferTelegramMovieToR2 } from '../telegram/transfer.js';
+import { uploadToR2 } from '../storage/r2.js';
 import { categories, episodes, findEpisode, normalizeQuery, publicMovie, queryCatalog, searchMovies, toPlaySource } from '../domain/catalog.js';
 import { signPlaybackToken } from './playback-tokens.js';
 import type { MovieRecord } from '../types.js';
@@ -117,6 +119,35 @@ async function handleAdmin(request: IncomingMessage, response: ServerResponse, c
       movieId,
       transferred: transfer.transferred,
       reason: transfer.reason,
+      mediaSource: saved.media_source,
+      mediaObjectKey: saved.media_object_key
+    });
+    return true;
+  }
+  const uploadMatch = pathname.match(/^\/api\/admin\/movies\/([^/]+)\/upload$/);
+  if (uploadMatch && request.method === 'PUT') {
+    const movieId = decodeURIComponent(uploadMatch[1]);
+    const movies = await catalog.list(true);
+    const movie = movies.find(item => item.movie_id === movieId);
+    if (!movie) throw new HttpError(404, 'Movie not found');
+    const contentLength = Number(request.headers['content-length'] ?? Number.NaN);
+    if (!Number.isInteger(contentLength) || contentLength <= 0) {
+      throw new HttpError(400, 'A video request body with content-length is required');
+    }
+    const objectKey = `movies/${movie.movie_id}.mp4`;
+    await uploadToR2(objectKey, Readable.toWeb(request) as ReadableStream<Uint8Array>, request.headers['content-type'] ?? 'video/mp4', contentLength);
+    const next: MovieRecord = {
+      ...movie,
+      media_source: 'r2',
+      media_url: `r2://${process.env.R2_BUCKET ?? ''}/${objectKey}`,
+      media_object_key: objectKey,
+      media_status_reason: '',
+      updated_at: new Date().toISOString()
+    };
+    const saved = await catalog.upsert(next);
+    success(response, {
+      movieId,
+      transferred: true,
       mediaSource: saved.media_source,
       mediaObjectKey: saved.media_object_key
     });

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -90,6 +91,52 @@ test('empty catalog renders a clear empty state and search results message', asy
   await expect(page.getByText('No movies found.')).toBeVisible();
 });
 
+test('home cards and heroes use generated R2 posters and readable generic titles', async ({ page }) => {
+  const movieId = 'telegram--1004296358811-21';
+  await page.route('**/api/posters/**', route => route.fulfill({
+    status: 200,
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>'
+  }));
+  await page.route('**/api/movies*', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { items: [{
+        movie_id: movieId, title: `Telegram movie ${movieId}`, type: 'movie', status: 'published',
+        media_source: 'r2', media_object_key: `movies/${movieId}.mp4`, created_at: '2026-01-01T00:00:00Z'
+      }], total: 1, page: 1, pageSize: 8, totalPages: 1 } })
+    });
+  });
+
+  await page.goto('/');
+
+  await expect(page.locator('.movie-card .poster').first()).toHaveAttribute('src', `/api/posters/${movieId}`);
+  await expect(page.locator('.hero-card .hero-image').first()).toHaveAttribute('src', `/api/posters/${movieId}`);
+  await expect(page.getByText(`Telegram movie ${movieId}`).first()).toBeVisible();
+});
+
+test('home fallback is shown when a poster proxy request fails', async ({ page }) => {
+  await page.route('**/api/movies*', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { items: [{
+        movie_id: 'r2-movie', title: 'R2 movie', type: 'movie', status: 'published',
+        media_source: 'r2', created_at: '2026-01-01T00:00:00Z'
+      }], total: 1, page: 1, pageSize: 8, totalPages: 1 } })
+    });
+  });
+  await page.route('**/api/posters/**', route => route.fulfill({ status: 404, body: 'Not found' }));
+
+  await page.goto('/');
+
+  const poster = page.locator('.movie-card .poster').first();
+  await expect(poster).toHaveAttribute('src', /^data:image\/svg\+xml/);
+  await expect(poster).toHaveAttribute('src', /No%20Poster/);
+  await expect(poster).not.toContainText('404');
+});
+
 test('player renders an HTML5 video for a playable R2 source', async ({ page }) => {
   const movieId = 'r2-movie';
   await page.route('**/api/play/**', async route => {
@@ -104,7 +151,7 @@ test('player renders an HTML5 video for a playable R2 source', async ({ page }) 
   });
   await page.route('**/api/media/**', async route => {
     expect(route.request().url()).toBe(`http://127.0.0.1:5173/api/media/${movieId}?token=signed-token`);
-    const sample = await readFile('tests/fixtures/sample.mp4');
+    const sample = await readFile(fileURLToPath(new URL('fixtures/sample.mp4', import.meta.url)));
     await route.fulfill({ status: 200, headers: { 'content-type': 'video/mp4', 'content-length': String(sample.byteLength) }, body: sample });
   });
 
