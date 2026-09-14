@@ -37,7 +37,7 @@ export default function PlayerPage() {
         <button onClick={() => { setMuted(!muted); videoRef.current!.muted = !muted; }}>{muted ? '🔇 Unmute' : '🔊 Mute'}</button>
         <button onClick={() => { const element = videoRef.current; if (element?.requestFullscreen) void element.requestFullscreen(); }}>⛶ Fullscreen</button>
       </div>
-      <div className="status">{status}<br />Playback metadata: Telegram chat {source.telegramChatId}, message {source.telegramMessageId}.</div>
+      <div className="status">{status}<br />Now playing: {source.title}{source.titleKm ? ` • ${source.titleKm}` : ''}{source.type === 'series' ? ` • S${String(source.season ?? 0).padStart(2, '0')} E${String(source.episode ?? 0).padStart(2, '0')}` : ''}</div>
     </>
   );
 }
